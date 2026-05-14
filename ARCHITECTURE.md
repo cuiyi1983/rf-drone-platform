@@ -10,12 +10,26 @@
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                         Frontend (Web UI)                         │
-│              Socket.IO 实时推送（推理结果/调试信息）                 │
+│                                                                   │
+│   ┌──────────────────────────────────────────────────────────┐   │
+│   │  Socket.IO Client  │  REST API Client                      │   │
+│   │  - inference_result│  - POST /api/v1/session/start         │   │
+│   │  - collector_stats │  - GET  /api/v1/session/status        │   │
+│   │  - device_status   │  - GET  /api/v1/components            │   │
+│   │  - error           │  - GET  /api/v1/devices               │   │
+│   └──────────────────────────────────────────────────────────┘   │
 └────────────────────────────┬─────────────────────────────────────┘
                              │
                              ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                       Platform Backend                            │
+│   REST API (控制面)           │  Socket.IO Server (数据面推送)      │
+│   ─────────────────────────  │  ───────────────────────────────  │
+│   POST /session/start         │  → inference_result (帧)           │
+│   POST /session/stop         │  → collector_stats (1s/次)         │
+│   GET  /session/status       │  → device_status (实时)            │
+│   GET  /components           │  → error (实时)                    │
+│   GET  /devices              │                                    │
 │                                                                   │
 │  ┌────────────────┐         ┌────────────────────────────────┐  │
 │  │  Config Manager │         │     Inference Framework        │  │
@@ -323,7 +337,8 @@ class IInferenceComponent(ABC):
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
-| 2026-05-14 | v2.3 | 新增 Config Manager 配置分层设计；更新 Pluto 约束状态；min_data_points 修正 |
+| 2026-05-14 | v2.4 | 新增 Config Manager 配置分层设计；更新 Pluto 约束状态；min_data_points 修正 |
+| 2026-05-14 | v2.3 | 新增前后台接口文档 platform-frontend.yaml；更新系统全貌图（前端层 + REST API + Socket.IO）|
 | 2026-05-14 | v2.2 | 完善帧缓冲策略（消费不了就扔）、组件生命周期、调试格式统一 |
 | 2026-05-14 | v2.0 | 新增 Inference Framework 解耦设计 |
 | 2026-05-14 | v1.0 | 初始架构 |

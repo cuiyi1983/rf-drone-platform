@@ -1,0 +1,636 @@
+# 接口协议：平台前后台接口
+
+> 版本 v1.0 — 2026-05-14
+> 状态：草稿
+
+---
+
+## 目录
+
+1. [概述](#1-概述)
+2. [REST-API-控制面)
+3. [Socket.IO-事件数据面)
+4. [Socket.IO-消息格式)
+5. [错误码)
+6. [与其他接口文件的关系)
+
+---
+
+## 1. 概述
+
+### 1.1 设计原则
+
+- **Config Manager 在后端**：前端只调用 REST API，不直接管理配置
+- **Socket.IO 替代原生 WebSocket**：稳定性原因，推送推理结果、设备状态、采集统计
+- **配置分层**：Platform 定义范围 + Component 提供建议 + Collector 只执行
+
+### 1.2 传输协议
+
+| 通道 | 协议 | 用途 |
+|---|---|---|
+| 控制面 | REST API | 会话管理、组件查询、设备查询 |
+| 数据面 | Socket.IO | 实时推送推理结果、设备状态、采集统计 |
+
+---
+
+## 2. REST API（控制面）
+
+### 2.1 会话管理
+
+#### 启动会话
+
+```
+POST /api/v1/session/start
+```
+
+**Request:**
+
+```yaml
+{
+  "component_id": "rfuav-two-stage",   # string, 必填, 组件ID
+  "config": {                          # object, 可选, 运行配置
+    "confidence_threshold": 0.5
+  }
+}
+```
+
+**Response (200):**
+
+```yaml
+{
+  "session_id": "sess_abc123",          # string, 会话ID
+  "status": "running"                   # string, 当前状态
+}
+```
+
+**Error (400/404/500):**
+
+```yaml
+{
+  "code": 1001,
+  "message": "组件不存在或初始化失败"
+}
+```
+
+---
+
+#### 停止会话
+
+```
+POST /api/v1/session/stop
+```
+
+**Request:**
+
+```yaml
+{
+  "session_id": "sess_abc123"           # string, 必填, 会话ID
+}
+```
+
+**Response (200):**
+
+```yaml
+{
+  "status": "stopped",                  # string, 已停止
+  "stats": {
+    "frames_received": 10000,
+    "frames_dropped": 50,
+    "duration_seconds": 3600,
+    "detections_count": 12
+  }
+}
+```
+
+---
+
+#### 查询会话状态
+
+```
+GET /api/v1/session/status
+```
+
+**Query Parameters:**
+
+```yaml
+session_id: string  # 可选, 不提供则返回所有活跃会话
+```
+
+**Response (200):**
+
+```yaml
+{
+  "sessions": [                         # 不带 session_id 时返回数组
+    {
+      "session_id": "sess_abc123",
+      "status": "running",
+      "component_id": "rfuav-two-stage",
+      "device_info": {
+        "type": "PlutoSDR",
+        "uri": "usb:2.6.5",
+        "center_freq": 5800000000,
+        "sample_rate": 60000000
+      },
+      "current_config": {
+        "confidence_threshold": 0.5,
+        "rx_buffer_size": 524288,
+        "rx_lo": 5800000000,
+        "rx_gain": 20
+      },
+      "started_at": "2026-05-14T15:00:00Z"
+    }
+  ]
+}
+# 或单个会话（带 session_id 参数时）
+{
+  "session_id": "sess_abc123",
+  "status": "running",
+  "component_id": "rfuav-two-stage",
+  "device_info": {...},
+  "current_config": {...},
+  "started_at": "2026-05-14T15:00:00Z"
+}
+```
+
+---
+
+### 2.2 组件管理
+
+#### 列出可用组件
+
+```
+GET /api/v1/components
+```
+
+**Response (200):**
+
+```yaml
+{
+  "components": [
+    {
+      "id": "rfuav-two-stage",
+      "name": "RFUAV 两阶段推理",
+      "version": "2.0.0",
+      "config_schema": {
+        "confidence_threshold": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  ]
+}
+```
+
+---
+
+#### 获取组件详情
+
+```
+GET /api/v1/components/{id}
+```
+
+**Path Parameters:**
+
+```yaml
+id: string  # 组件ID
+```
+
+**Response (200):**
+
+```yaml
+{
+  "id": "rfuav-two-stage",
+  "name": "RFUAV 两阶段推理",
+  "version": "2.0.0",
+  "type": "inference",
+  "capability": {
+    "device_support": ["npu", "gpu", "cpu"]
+  },
+  "collector_requirements": {
+    "min_data_points": 600000
+  },
+  "io": {
+    "input": [
+      {
+        "name": "iq_frame",
+        "type": "dict"
+      }
+    ],
+    "output": [
+      { "name": "detections" },
+      { "name": "debug" }
+    ]
+  },
+  "config_schema": {...}
+}
+```
+
+---
+
+#### 获取组件配置Schema
+
+```
+GET /api/v1/components/{id}/config-schema
+```
+
+**Response (200):**
+
+```yaml
+{
+  "config_schema": {
+    "confidence_threshold": {
+      "type": "number",
+      "default": 0.5,
+      "minimum": 0,
+      "maximum": 1,
+      "description": "检测置信度阈值"
+    },
+    "models_to_use": {
+      "type": "array",
+      "default": ["DJI_MAVIC3_PRO", "DJI_PHANTOM4"],
+      "items": {
+        "type": "string"
+      },
+      "description": "使用的模型列表"
+    }
+  }
+}
+```
+
+---
+
+### 2.3 设备管理
+
+#### 列出已发现设备
+
+```
+GET /api/v1/devices
+```
+
+**Response (200):**
+
+```yaml
+{
+  "devices": [
+    {
+      "id": "pluto_usb_2.6.5",
+      "type": "PlutoSDR",
+      "connected": true,
+      "uri": "usb:2.6.5",
+      "firmware_version": "0.32",
+      "available_freq_ranges": [
+        { "start": 325000000, "end": 3800000000 },
+        { "start": 5700000000, "end": 5900000000 }
+      ],
+      "sample_rates": [60000000],
+      "buffer_sizes": [65536, 262144, 524288, 1048576]
+    },
+    {
+      "id": "pluto_ip_192.168.2.1",
+      "type": "PlutoSDR",
+      "connected": true,
+      "uri": "ip:192.168.2.1",
+      "firmware_version": "0.32",
+      "available_freq_ranges": [...],
+      "sample_rates": [60000000],
+      "buffer_sizes": [65536, 262144, 524288, 1048576]
+    }
+  ]
+}
+```
+
+---
+
+#### 获取设备能力
+
+```
+GET /api/v1/devices/{id}/capabilities
+```
+
+**Path Parameters:**
+
+```yaml
+id: string  # 设备ID
+```
+
+**Response (200):**
+
+```yaml
+{
+  "capabilities": {
+    "frequency_range": {
+      "min": 325000000,
+      "max": 3800000000
+    },
+    "extended_freq_range": {
+      "min": 5700000000,
+      "max": 5900000000
+    },
+    "sample_rate": {
+      "fixed": 60000000
+    },
+    "gain": {
+      "min": 0,
+      "max": 74,
+      "default": 20,
+      "step": 1
+    },
+    "buffer_size": {
+      "supported": [65536, 262144, 524288, 1048576],
+      "default": 524288
+    },
+    "bandwidth": {
+      "supported": [56000000]
+    }
+  }
+}
+```
+
+---
+
+## 3. Socket.IO 事件（数据面）
+
+### 3.1 后台 → 前台推送
+
+#### 推理结果
+
+**Event:** `inference_result`
+
+```yaml
+{
+  "session_id": "sess_abc123",          # string, 会话ID
+  "frame_id": 1234,                     # number, 帧序号
+  "timestamp": 1715678900.123,          # number, Unix时间戳
+  "detections": [                        # array, 检测结果列表
+    {
+      "model": "DJI_MAVIC3_PRO",        # string, 模型名称
+      "confidence": 0.95,               # number, 置信度 (0-1)
+      "frequency": 5800000000           # number, 检测频率 (Hz)
+    }
+  ],
+  "debug": {                            # object, 调试信息
+    "inference_time_ms": 12.5,          # number, 单次推理总耗时
+    "stft_time_ms": 3.2,                # number, STFT耗时
+    "model_time_ms": 8.1,               # number, 模型推理耗时
+    "device": "npu",                     # string, 运行设备
+    "memory_mb": 256                     # number, 内存占用
+  }
+}
+```
+
+**推送频率**：每帧推理完成（1-7次/秒，取决于buffer_size配置）
+
+---
+
+#### 采集统计
+
+**Event:** `collector_stats`
+
+```yaml
+{
+  "session_id": "sess_abc123",          # string, 会话ID
+  "frames_per_second": 6.5,             # number, 采集帧率
+  "dropped_rate": 0.02,                 # number, 丢弃率 (0-1)
+  "buffer_level": 45,                    # number, 帧队列当前深度
+  "total_frames": 10000,                 # number, 累计采集帧数
+  "total_dropped": 50                    # number, 累计丢弃帧数
+}
+```
+
+**推送频率**：每秒一次
+
+---
+
+#### 设备状态
+
+**Event:** `device_status`
+
+```yaml
+{
+  "event": "disconnected",              # string, "connected" | "disconnected" | "error"
+  "device_id": "pluto_usb_2.6.5",       # string, 设备ID
+  "timestamp": 1715678900.123,           # number, Unix时间戳
+  "detail": "USB cable unplugged"       # string, 可选, 详情描述
+}
+```
+
+**推送频率**：实时（状态变化时）
+
+---
+
+#### 错误通知
+
+**Event:** `error`
+
+```yaml
+{
+  "code": 2001,                         # number, 错误码
+  "message": "组件初始化失败: 模型文件损坏",  # string, 错误信息
+  "session_id": "sess_abc123",           # string, 可选, 关联会话
+  "timestamp": 1715678900.123           # number, Unix时间戳
+}
+```
+
+**推送频率**：实时（发生错误时）
+
+---
+
+### 3.2 前台 → 后台
+
+#### 订阅会话
+
+**Event:** `subscribe`
+
+```yaml
+{
+  "session_id": "sess_abc123"           # string, 必填, 要订阅的会话ID
+}
+```
+
+**Response (Socket.IO ack):**
+
+```yaml
+{
+  "success": true,
+  "subscribed_events": ["inference_result", "collector_stats", "device_status", "error"]
+}
+```
+
+---
+
+#### 取消订阅
+
+**Event:** `unsubscribe`
+
+```yaml
+{
+  "session_id": "sess_abc123"           # string, 必填, 要取消订阅的会话ID
+}
+```
+
+**Response (Socket.IO ack):**
+
+```yaml
+{
+  "success": true
+}
+```
+
+---
+
+#### 请求历史推理结果
+
+**Event:** `get_history`
+
+```yaml
+{
+  "session_id": "sess_abc123",          # string, 必填, 会话ID
+  "limit": 100                          # number, 可选, 返回条数, 默认100, 最大1000
+}
+```
+
+**Response (Socket.IO ack):**
+
+```yaml
+{
+  "success": true,
+  "results": [
+    {
+      "frame_id": 1234,
+      "timestamp": 1715678900.123,
+      "detections": [...],
+      "debug": {...}
+    }
+  ],
+  "total": 150,
+  "returned": 100
+}
+```
+
+---
+
+## 4. Socket.IO 消息格式
+
+### 4.1 连接建立
+
+```javascript
+// 前台连接
+const socket = io('http://platform-backend:8080', {
+  transports: ['websocket', 'polling'],  // 优先websocket，回退polling
+  reconnection: true,
+  reconnectionDelay: 1000,
+  reconnectionAttempts: 10
+});
+
+// 认证（可选）
+socket.emit('auth', { token: 'xxx' });
+```
+
+### 4.2 房间管理
+
+每个会话对应一个 Socket.IO Room：
+
+```javascript
+// 订阅某个会话的数据推送
+socket.emit('subscribe', { session_id: 'sess_abc123' });
+socket.join('session:sess_abc123');  // 自动加入对应room
+
+// 取消订阅
+socket.emit('unsubscribe', { session_id: 'sess_abc123' });
+socket.leave('session:sess_abc123');
+```
+
+### 4.3 命名空间
+
+| Namespace | 用途 |
+|---|---|
+| `/` | 默认命名空间，推送推理结果和采集统计 |
+| `/admin` | 管理操作（预留） |
+
+---
+
+## 5. 错误码
+
+### 5.1 业务错误码
+
+| 错误码 | 含义 | HTTP Status |
+|---|---|---|
+| 1001 | 组件不存在 | 404 |
+| 1002 | 组件初始化失败 | 500 |
+| 1003 | 会话不存在 | 404 |
+| 1004 | 会话已停止 | 400 |
+| 1005 | 配置参数无效 | 400 |
+| 1006 | 设备不存在或未连接 | 404 |
+| 1007 | 设备能力不足 | 400 |
+
+### 5.2 Socket.IO 错误码
+
+| 错误码 | 含义 |
+|---|---|
+| 2001 | 组件运行时错误 |
+| 2002 | 采集卡丢失 |
+| 2003 | 帧队列溢出 |
+| 2004 | 模型推理超时 |
+| 2005 | 设备连接断开 |
+
+### 5.3 系统错误码
+
+| 错误码 | 含义 | HTTP Status |
+|---|---|---|
+| 3001 | 服务器内部错误 | 500 |
+| 3002 | 服务不可用 | 503 |
+| 3003 | 请求超时 | 408 |
+
+---
+
+## 6. 与其他接口文件的关系
+
+### 6.1 接口层次
+
+```
+┌─────────────────────────────────────┐
+│        Frontend (Web UI)            │
+│   ←→ REST API + Socket.IO 连接      │
+└───────────────┬─────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────┐
+│      Platform Backend               │
+│   ←→ REST API (控制面)             │
+│   ←→ Socket.IO (数据面)            │
+│   ←→ /collector/* (内部调用)        │
+└───────────────┬─────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────┐
+│      Collector Service             │
+│   ←→ REST API (collector-api.yaml) │
+└─────────────────────────────────────┘
+```
+
+### 6.2 与 collector-api.yaml 的关系
+
+| 本文件 | collector-api.yaml | 关系 |
+|---|---|---|
+| `GET /api/v1/devices` | `GET /collector/devices` | Platform 透传 Collector 设备列表 |
+| `GET /api/v1/devices/{id}/capabilities` | `GET /collector/devices/{id}/capabilities` | Platform 透传设备能力 |
+| `POST /api/v1/session/start` | — | Platform 独有，调用 Config Manager |
+
+### 6.3 端口约定
+
+| 服务 | 端口 | 说明 |
+|---|---|---|
+| Platform Backend | 8080 | REST API + Socket.IO |
+| Collector Service | 8081 | collector-api.yaml |
+| Frontend (Web UI) | 3000 | 开发环境 |
+
+---
+
+## 7. 变更日志
+
+| 日期 | 版本 | 变更 |
+|---|---|---|
+| 2026-05-14 | v1.0 | 初始版本，定义 REST API + Socket.IO 接口 |
