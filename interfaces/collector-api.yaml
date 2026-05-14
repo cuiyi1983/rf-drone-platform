@@ -1,6 +1,6 @@
 # 接口协议：采集模块 API
 
-> 版本 v2.3 — 2026-05-14
+> 版本 v2.4 — 2026-05-14
 > 状态：已确立（v2.0 变更：简化配置，移除 burst_count）
 
 ---
@@ -9,7 +9,7 @@
 
 | 日期 | 版本 | 变更内容 |
 |---|---|---|
-| 2026-05-14 | v2.3 | 更新 /collector/discover 返回值（Capability Range Schema）；采样率/带宽固定值 |
+| 2026-05-14 | v2.4 | 修复 /collector/start config 缺少 buffer_size；更新过期示例为 2 频点 |
 | 2026-05-14 | v2.0 | 移除 burst_count 字段（组件内部决定）；采样率固定 60MHz；增益默认 20dB |
 | 2026-05-14 | v1.0 | 初始版本 |
 
@@ -36,9 +36,10 @@ Request:
   body:
     mode: pluto              # "pluto" | "simulator"
     config:
-      frequencies: [5760, 5775, 5800, 5825, 5850]  # MHz
-      sample_rate: 60e6      # Hz（固定值，不协商）
-      gain: 20               # dB（经验值）
+      frequencies: [5805000000, 2450000000]  # Hz（2.4GHz + 5.8GHz）
+      sample_rate: 60000000  # Hz（固定值）
+      buffer_size: 524288   # samples
+      gain: 20               # dB
       hop_interval_ms: 100
 
 Response:
@@ -80,9 +81,10 @@ Response:
       connected: true
       temperature: 45.2
     current_config:
-      center_freq: 5800
-      sample_rate: 60e6
-      gain: 20
+      center_freq: 5805000000  # Hz
+      sample_rate: 60000000   # Hz
+      buffer_size: 524288      # samples
+      gain: 20                 # dB
 ```
 
 ### 1.3 设备管理接口
@@ -168,7 +170,7 @@ Response:
     "sample_rate": 60e6,
     "iq_data": [[real, imag], ...],
     "metadata": {
-      "rx_buffer_size": 8192
+      "rx_buffer_size": 524288
     }
   }
 }

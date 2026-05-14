@@ -1,6 +1,6 @@
 # 接口协议：平台与采集模块的协同接口
 
-> 版本 v2.3 — 2026-05-14
+> 版本 v2.4 — 2026-05-14
 > 状态：已确立
 
 ---
@@ -9,6 +9,7 @@
 
 | 日期 | 版本 | 变更内容 |
 |---|---|---|
+| 2026-05-14 | v2.4 | 修复 apply_component_config 示例过期（min_data_points=600000，2频点）；补充 buffer_size/gain |
 | 2026-05-14 | v2.3 | 新增配置分层设计（Capability Range + Config Manager）；更新配置流程 |
 | 2026-05-14 | v2.0 | 简化配置流程；移除协商机制；组件决定兼容性 |
 | 2026-05-14 | v1.0 | 初始版本 |
@@ -27,10 +28,15 @@ Request:
     source: "component"
     component_id: "rfuav-two-stage"
     requirements:
-      min_data_points: 60000
+      min_data_points: 600000  # 60MHz × 10ms
     config:
-      sample_rate: 60e6      # 固定值
-      frequencies: [5760, 5775, 5800, 5825, 5850]
+      frequency: 5805000000    # Hz（5.8GHz）
+      buffer_size: 524288      # samples
+      gain: 20                 # dB
+      scan:
+        enabled: true
+        frequencies: [5805000000, 2450000000]  # 2.4GHz + 5.8GHz
+        hop_interval_ms: 100
 
 Response:
   200:
@@ -133,6 +139,7 @@ collector_capabilities:
 
 | 日期 | 版本 | 变更内容 |
 |---|---|---|
+| 2026-05-14 | v2.4 | 修复 apply_component_config 示例过期（min_data_points=600000，2频点）；补充 buffer_size/gain |
 | 2026-05-14 | v2.3 | 新增配置分层设计（Capability Range + Config Manager）；更新配置流程 |
-| 2026-05-14 | v2.0 | 简化配置流程，移除协商机制 |
+| 2026-05-14 | v2.0 | 简化配置流程；移除协商机制；组件决定兼容性 |
 | 2026-05-14 | v1.0 | 初始版本 |
