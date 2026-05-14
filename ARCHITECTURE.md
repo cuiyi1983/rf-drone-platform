@@ -94,9 +94,20 @@ STFT 生成频谱图（fs=60MHz, nperseg=1024）
 
 下载：http://yoyo-chat.cn:8000/
 
-## Agent 持久化
+## Agent 团队
 
-各 Agent 上下文存放在 `.openclaw/workspace/agents/<name>/`：
-- `SOUL.md` — 人格定义
-- `CONTEXT.md` — 当前状态
-- `HANDBOOK.md` — 职责手册（待补充）
+| Agent | 位置 | 职责 |
+|---|---|---|
+| **技术总监** | `agents/tech-director/` | 架构守护、接口审批、原则管理 |
+| **小崔崔** | `agents/xiaocuicui/` | 训练模块 |
+| **小边** | `agents/xiaobian/` | 推理模块 |
+| **小采采** | `agents/xiaocaicai/` | 采集模块 |
+| **小页** | `agents/xiaoye/` | Web UI |
+
+**接口管理**：所有跨模块接口定义在 `interfaces/` 目录下（待建立）。
+
+### 技术总监职责
+- 守护六项架构原则（接口不变性、单项数据流、模块自治、接口协议化、可降级性、配置外部化）
+- 审批所有跨模块接口变更
+- 发现原则被违反时立即报崔老板确认
+- 详见：`agents/tech-director/HANDBOOK.md`
