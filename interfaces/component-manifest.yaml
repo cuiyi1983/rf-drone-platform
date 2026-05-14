@@ -1,0 +1,262 @@
+# 接口协议：推理组件自描述 Manifest
+
+> 版本 v1.0 — 2026-05-14
+> 状态：已确立
+> 负责Agent：技术总监
+
+---
+
+## 1. 组件 Manifest 规范
+
+每个推理组件根目录必须包含 `manifest.yaml`，平台通过解析此文件了解组件能力。
+
+### 1.1 完整示例
+
+```yaml
+component:
+  id: "rfuav-two-stage"           # 全局唯一标识（语义化）
+  name: "RFUAV 两阶段推理组件"      # 人类可读名称
+  version: "2.0.0"                 # 语义版本（SemVer）
+  author: "小崔崔"                  # 开发者
+  type: "inference"                # 组件类型
+  description: "RFUAV YOLO检测 + ResNet分类两阶段推理"
+
+capability:
+  # 支持的推理设备（平台按此选择可用设备）
+  device_support: [npu, gpu, cpu]
+
+  # 是否支持各特性
+  async_inference: true             # 支持异步推理
+  batch_inference: false            # 支持批处理
+  multi_model_joint: false         # 支持多模型并发判决
+
+io:
+  input:
+    - name: iq_data
+      type: complex64[]
+      description: IQ采样数据
+      required: true
+    - name: sample_rate
+      type: float
+      unit: Hz
+      description: 采样率
+      required: true
+    - name: center_freq
+      type: float
+      unit: Hz
+      description: 中心频率
+      required: false
+      default: 5800e6
+
+  output:
+    - name: detections
+      type: Detection[]
+      description: 检测结果列表
+    - name: debug
+      type: DebugInfo
+      description: 调试信息（可选）
+
+# 推理组件对采数模块的要求（声明式）
+collector_requirements:
+  min_sample_rate:
+    value: 60e6
+    unit: Hz
+    description: 最低采样率
+  recommended_sample_rate:
+    value: 100e6
+    unit: Hz
+    description: 推荐采样率
+  frequency_range:
+    start: 5.7e9
+    end: 6.0e9
+    unit: Hz
+    description: 需要的频率范围
+  min_burst_count:
+    value: 200
+    description: 最低burst数
+  signal_type:
+    value: frequency_hopping
+    description: 信号类型（frequency_hopping/fixed_frequency）
+
+# 采数配置模板（推荐值，平台作为默认值）
+collector_config_template:
+  mode: frequency_hopping
+  frequencies: [5760, 5775, 5800, 5825, 5850]  # MHz
+  sample_rate: 60e6                             # Hz
+  burst_count: 200
+  gain: 60                                     # dB
+  hop_interval_ms: 100
+
+# 配置参数 Schema（用于平台动态生成UI）
+config_schema:
+  confidence_threshold:
+    type: number
+    title: 置信度阈值
+    default: 0.5
+    minimum: 0
+    maximum: 1
+    step: 0.01
+  nms_threshold:
+    type: number
+    title: NMS阈值
+    default: 0.45
+    minimum: 0
+    maximum: 1
+  max_detections:
+    type: integer
+    title: 最大检测数
+    default: 10
+
+# 调试信息 Schema
+debug_schema:
+  latency_ms:
+    type: number
+    description: 推理延迟（毫秒）
+  memory_usage_mb:
+    type: number
+    description: 内存占用（MB）
+  device_utilization:
+    type: number
+    description: 设备利用率（0-100%）
+```
+
+### 1.2 类型定义
+
+```yaml
+# Detection 类型
+Detection:
+  model: string              # 机型名
+  confidence: number         # 置信度 [0, 1]
+  frequency: number         # 信号频率 Hz
+  bbox: [x1, y1, x2, y2]  # 检测框像素坐标（可选）
+  stage: integer            # 推理阶段（1=检测, 2=分类）
+
+# DebugInfo 类型
+DebugInfo:
+  latency_ms: number
+  memory_usage_mb: number
+  device: string            # 当前使用的设备
+  inference_count: integer  # 推理次数
+```
+
+---
+
+## 2. 组件接口（Python ABC）
+
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any
+
+@dataclass
+class ComponentManifest:
+    """组件自描述信息（对应 manifest.yaml）"""
+    id: str
+    name: str
+    version: str
+    type: str
+    capability: dict
+    io: dict
+    collector_requirements: dict = field(default_factory=dict)
+    collector_config_template: dict = field(default_factory=dict)
+    config_schema: dict = field(default_factory=dict)
+    debug_schema: dict = field(default_factory=dict)
+
+class IInferenceComponent(ABC):
+    """推理组件基类接口"""
+
+    @abstractmethod
+    def get_manifest(self) -> ComponentManifest:
+        """返回组件自描述信息"""
+        pass
+
+    @abstractmethod
+    def initialize(self, config: dict, device: str) -> None:
+        """初始化组件
+
+        Args:
+            config: 组件配置参数字典
+            device: 分配的设备类型 ('npu'/'gpu'/'cpu')
+        """
+        pass
+
+    @abstractmethod
+    def infer(self, input_data: dict) -> dict:
+        """同步推理
+
+        Args:
+            input_data: {
+                'iq_data': complex[],
+                'sample_rate': float,
+                'center_freq': float (optional)
+            }
+        Returns:
+            {
+                'detections': [...],
+                'debug': {...} (optional)
+            }
+        """
+        pass
+
+    @abstractmethod
+    async def infer_async(self, input_data: dict) -> dict:
+        """异步推理（如果组件声明支持 async_inference=True）"""
+        pass
+
+    @abstractmethod
+    def get_config_schema(self) -> dict:
+        """返回配置参数 JSON Schema"""
+        pass
+
+    @abstractmethod
+    def get_debug_info(self) -> dict:
+        """返回当前调试信息"""
+        pass
+
+    @abstractmethod
+    def release(self) -> None:
+        """释放组件占用的资源"""
+        pass
+
+    @abstractmethod
+    def health_check(self) -> bool:
+        """组件健康检查"""
+        pass
+```
+
+---
+
+## 3. 设备选择协议
+
+平台按以下优先级自动选择设备：
+
+```
+优先级: NPU > GPU > CPU
+流程:
+  1. 读取组件 manifest.capability.device_support
+  2. 按优先级尝试每个支持的设备
+  3. 首次验证成功则选定
+  4. 调用 initialize(config, device) 时传入选定设备
+```
+
+设备验证方式（平台实现）:
+```python
+def validate_device(component: IInferenceComponent, device: str) -> bool:
+    """验证组件是否能在指定设备上正常运行"""
+    try:
+        test_input = {'iq_data': np.random.complex64(1024), 'sample_rate': 60e6}
+        component.initialize({}, device)
+        result = component.infer(test_input)
+        component.release()
+        return True
+    except Exception:
+        return False
+```
+
+---
+
+## 4. 变更日志
+
+| 日期 | 版本 | 变更内容 |
+|---|---|---|
+| 2026-05-14 | v1.0 | 初始版本，确立组件自描述协议 |

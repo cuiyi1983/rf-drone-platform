@@ -1,0 +1,116 @@
+# 接口协议：平台与采集模块的协同接口
+
+> 版本 v1.0 — 2026-05-14
+> 状态：已确立
+> 负责Agent：技术总监
+
+---
+
+## 1. 平台向采集模块推送配置
+
+当用户在 Frontend 配置采数参数时，Platform Backend 转发配置到 Collector Service。
+
+### POST /collector/apply_component_config
+
+接收推理组件推荐的采数配置（由组件 manifest 中的 collector_config_template 生成）
+
+```yaml
+Request:
+  body:
+    source: "component"                # 配置来源标识
+    component_id: "rfuav-two-stage"
+    config:
+      mode: frequency_hopping
+      frequencies: [5760, 5775, 5800, 5825, 5850]
+      sample_rate: 60e6
+      burst_count: 200
+      gain: 60
+    apply_as_default: true            # 是否作为默认配置
+
+Response:
+  200:
+    code: 0
+    message: "组件推荐配置已应用"
+    applied_config: {...}
+    platform_overrides: {}           # 平台override的部分（如果有）
+```
+
+---
+
+## 2. 采集模块主动上报
+
+### 2.1 设备状态变更上报
+
+当 Pluto 设备连接/断开时，Collector Service 主动通知 Platform。
+
+```
+POST /platform/device_event (Platform Backend 的回调接口)
+
+Body:
+{
+  "event": "device_connected" | "device_disconnected" | "device_error"
+  "device_id": "usb:2.6.5"
+  "timestamp": 1715678900.123
+  "detail": {}  # 事件详情
+}
+```
+
+### 2.2 采集统计上报
+
+定期推送采集统计（可选）
+
+```
+Body:
+{
+  "type": "collector_stats"
+  "session_id": "uuid"
+  "stats":
+    bursts_per_second: 58.5
+    dropped_rate: 0.001
+    avg_signal_strength: -40.5
+    timestamp: 1715678900.123
+}
+```
+
+---
+
+## 3. 配置冲突处理
+
+当用户手动配置与组件推荐冲突时：
+
+```
+场景：用户配置的 sample_rate < 组件要求的 min_sample_rate
+
+Platform Backend 处理流程：
+1. 读取组件 collector_requirements.min_sample_rate
+2. 比较用户配置
+3. 若冲突：
+   - 拒绝启动采集
+   - 推送警告到 Frontend
+   - 显示需要调整的参数及原因
+
+冲突响应示例：
+{
+  "code": 409,
+  "message": "配置的采样率低于组件要求",
+  "conflicts": [
+    {
+      "parameter": "sample_rate",
+      "user_value": "30e6",
+      "min_required": "60e6",
+      "component_id": "rfuav-two-stage"
+    }
+  ],
+  "suggested_fix": {
+    "sample_rate": "60e6"
+  }
+}
+```
+
+---
+
+## 4. 变更日志
+
+| 日期 | 版本 | 变更内容 |
+|---|---|---|
+| 2026-05-14 | v1.0 | 初始版本 |

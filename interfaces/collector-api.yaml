@@ -1,0 +1,232 @@
+# 接口协议：采集模块 API
+
+> 版本 v1.0 — 2026-05-14
+> 状态：已确立
+> 负责Agent：技术总监
+
+---
+
+## 1. Collector Service HTTP API
+
+Collector Service 部署在独立服务器，Platform Backend 通过 HTTP 调用。
+
+### 1.1 基础信息
+
+```
+Base URL: http://<collector-server>:8080/api/v1
+Content-Type: application/json
+```
+
+### 1.2 采集控制接口
+
+#### POST /collector/start
+开始采集
+
+```yaml
+Request:
+  body:
+    mode: pluto              # "pluto" | "simulator"
+    config:
+      frequencies: [5760, 5775, 5800, 5825, 5850]  # MHz
+      sample_rate: 60e6      # Hz
+      burst_count: 200
+      gain: 60               # dB
+      hop_interval_ms: 100
+      # 以下为 simulator 模式专用
+      iq_file: "/data/test.npy"   # IQ数据文件路径
+      loop: true                    # 是否循环播放
+
+Response:
+  200:
+    code: 0
+    message: "采集已开始"
+    session_id: "uuid-string"
+  400:
+    code: 400
+    message: "参数错误"
+  500:
+    code: 500
+    message: "设备未连接"
+```
+
+#### POST /collector/stop
+停止采集
+
+```yaml
+Request:
+  body:
+    session_id: "uuid-string"
+
+Response:
+  200:
+    code: 0
+    message: "采集已停止"
+    stats:
+      total_bursts: 1000
+      dropped_bursts: 0
+      duration_ms: 5000
+```
+
+#### GET /collector/status
+查询采集状态
+
+```yaml
+Response:
+  200:
+    code: 0
+    status: idle | running | error
+    mode: pluto
+    device_info:
+      uri: "usb:2.6.5"
+      connected: true
+      temperature: 45.2  # 摄氏度
+    current_config:
+      center_freq: 5800
+      sample_rate: 60e6
+```
+
+#### POST /collector/config
+更新采集配置（运行时）
+
+```yaml
+Request:
+  body:
+    frequencies: [5760, 5800, 5850]
+    gain: 55
+
+Response:
+  200:
+    code: 0
+    message: "配置已更新"
+```
+
+### 1.3 设备管理接口
+
+#### GET /collector/devices
+查询可用设备
+
+```yaml
+Response:
+  200:
+    code: 0
+    devices:
+      - id: "usb:2.6.5"
+        type: pluto
+        name: "ADALM PLUTO"
+        serial: "1044730a2d910002300"
+        connected: true
+        fw_version: "v0.34"
+      - id: "usb:2.10.5"
+        type: pluto
+        name: "ADALM PLUTO"
+        connected: false
+```
+
+#### POST /collector/connect
+连接设备
+
+```yaml
+Request:
+  body:
+    device_id: "usb:2.6.5"
+
+Response:
+  200:
+    code: 0
+    message: "设备已连接"
+```
+
+#### POST /collector/disconnect
+断开设备
+
+```yaml
+Request:
+  body:
+    device_id: "usb:2.6.5"
+
+Response:
+  200:
+    code: 0
+    message: "设备已断开"
+```
+
+### 1.4 模拟器接口
+
+#### POST /collector/simulator/load
+加载 IQ 数据文件
+
+```yaml
+Request:
+  body:
+    file_path: "/data/test.npy"
+    format: npy         # "npy" | "npz" | "iq"
+
+Response:
+  200:
+    code: 0
+    message: "文件已加载"
+    metadata:
+      sample_count: 600000
+      sample_rate: 60e6
+      duration_ms: 10
+      format: complex64
+```
+
+### 1.5 WebSocket 实时流
+
+#### WS /collector/stream
+实时 IQ 数据流（推送模式）
+
+```
+Platform Backend 建立 WebSocket 连接后，Collector Service 持续推送 IQ 数据块：
+
+Server → Client (JSON):
+{
+  "type": "iq_data",
+  "session_id": "uuid-string",
+  "timestamp": 1715678900.123,
+  "center_freq": 5800e6,
+  "sample_rate": 60e6,
+  "burst_count": 200,
+  "iq_data": [[real, imag], [real, imag], ...],  # 交错复数数组
+  "sequence": 1234
+}
+
+Server → Client (Binary, 推荐):
+- 帧头: 8 bytes (sequence number, big-endian)
+- 数据: 200 * 1024 * 8 bytes (burst_count * samples_per_burst * complex64)
+
+Server → Client (Error):
+{
+  "type": "error",
+  "code": 500,
+  "message": "设备断开"
+}
+```
+
+---
+
+## 2. Collector 异常处理
+
+```yaml
+Error Codes:
+  400: 参数错误
+  404: 设备未找到
+  409: 设备已被占用
+  500: 设备错误
+  503: 服务不可用
+```
+
+设备断开时的行为：
+1. Collector Service 立即推送 `error` 类型的 WebSocket 消息
+2. 自动尝试重连（最多3次，间隔1秒）
+3. 重连失败后推送 `disconnected` 消息
+4. Platform Backend 收到后应切换到错误状态并通知前端
+
+---
+
+## 3. 变更日志
+
+| 日期 | 版本 | 变更内容 |
+|---|---|---|
+| 2026-05-14 | v1.0 | 初始版本 |
