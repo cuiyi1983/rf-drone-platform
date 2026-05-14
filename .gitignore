@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.env
+.venv
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+*.iq
+*.npy
+*.rar
+*.zip
+*.onnx
+*.pt
+*.pth
+
+# Logs
+*.log
+logs/
+
+# Node
+node_modules/
+dist/
+build/
