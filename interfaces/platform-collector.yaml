@@ -1,63 +1,61 @@
 # 接口协议：平台与采集模块的协同接口
 
-> 版本 v1.0 — 2026-05-14
+> 版本 v2.3 — 2026-05-14
 > 状态：已确立
-> 负责Agent：技术总监
+
+---
+
+## 变更记录
+
+| 日期 | 版本 | 变更内容 |
+|---|---|---|
+| 2026-05-14 | v2.3 | 新增配置分层设计（Capability Range + Config Manager）；更新配置流程 |
+| 2026-05-14 | v2.0 | 简化配置流程；移除协商机制；组件决定兼容性 |
+| 2026-05-14 | v1.0 | 初始版本 |
 
 ---
 
 ## 1. 平台向采集模块推送配置
 
-当用户在 Frontend 配置采数参数时，Platform Backend 转发配置到 Collector Service。
-
 ### POST /collector/apply_component_config
 
-接收推理组件推荐的采数配置（由组件 manifest 中的 collector_config_template 生成）
+接收推理组件推荐的采数配置（由组件 manifest 中的 collector_requirements 生成）
 
 ```yaml
 Request:
   body:
-    source: "component"                # 配置来源标识
+    source: "component"
     component_id: "rfuav-two-stage"
+    requirements:
+      min_data_points: 60000
     config:
-      mode: frequency_hopping
+      sample_rate: 60e6      # 固定值
       frequencies: [5760, 5775, 5800, 5825, 5850]
-      sample_rate: 60e6
-      burst_count: 200
-      gain: 60
-    apply_as_default: true            # 是否作为默认配置
 
 Response:
   200:
     code: 0
-    message: "组件推荐配置已应用"
-    applied_config: {...}
-    platform_overrides: {}           # 平台override的部分（如果有）
+    message: "配置已应用"
 ```
 
 ---
 
 ## 2. 采集模块主动上报
 
-### 2.1 设备状态变更上报
-
-当 Pluto 设备连接/断开时，Collector Service 主动通知 Platform。
+### 2.1 设备状态变更
 
 ```
-POST /platform/device_event (Platform Backend 的回调接口)
+POST /platform/device_event
 
 Body:
 {
   "event": "device_connected" | "device_disconnected" | "device_error"
   "device_id": "usb:2.6.5"
   "timestamp": 1715678900.123
-  "detail": {}  # 事件详情
 }
 ```
 
-### 2.2 采集统计上报
-
-定期推送采集统计（可选）
+### 2.2 采集统计
 
 ```
 Body:
@@ -65,52 +63,76 @@ Body:
   "type": "collector_stats"
   "session_id": "uuid"
   "stats":
-    bursts_per_second: 58.5
+    frames_per_second: 58.5
     dropped_rate: 0.001
-    avg_signal_strength: -40.5
     timestamp: 1715678900.123
 }
 ```
 
 ---
 
-## 3. 配置冲突处理
+## 3. 配置流程（含 Config Manager）
 
-当用户手动配置与组件推荐冲突时：
+首次启动：
+  Collector.discover() → 返回 capability range → Config Manager 缓存
 
-```
-场景：用户配置的 sample_rate < 组件要求的 min_sample_rate
-
-Platform Backend 处理流程：
-1. 读取组件 collector_requirements.min_sample_rate
-2. 比较用户配置
-3. 若冲突：
-   - 拒绝启动采集
-   - 推送警告到 Frontend
-   - 显示需要调整的参数及原因
-
-冲突响应示例：
-{
-  "code": 409,
-  "message": "配置的采样率低于组件要求",
-  "conflicts": [
-    {
-      "parameter": "sample_rate",
-      "user_value": "30e6",
-      "min_required": "60e6",
-      "component_id": "rfuav-two-stage"
-    }
-  ],
-  "suggested_fix": {
-    "sample_rate": "60e6"
-  }
-}
-```
+运行时：
+  用户选择组件 → Platform 读取 manifest
+              → Config Manager 加载 collector_capabilities
+              → 合并：component建议值 ∩ 能力范围 → 最终配置
+              → WARNING 如有降级
+              → POST /collector/start 下发最终配置
+              → Collector 执行（只执行，不决策）
 
 ---
 
-## 4. 变更日志
+## 4. 采集器能力范围（Platform Config Manager 使用）
+
+Platform 通过 /collector/discover 获取硬件能力，Config Manager 缓存此 Schema，
+用于验证和合并组件推荐配置。
+
+### 4.1 Capability Range Schema
+
+```yaml
+collector_capabilities:
+  frequency:
+    type: int
+    range: [325000000, 6000000000]
+    default: 5805000000
+    unit: Hz
+  buffer_size:
+    type: int
+    range: [1024, 1048576]
+    default: 524288
+    unit: samples
+  gain:
+    type: float
+    range: [0, 60]
+    default: 20
+    unit: dB
+  sample_rate:
+    type: int
+    fixed: 60000000
+    unit: Hz
+  rf_bandwidth:
+    type: int
+    fixed: 56000000
+    unit: Hz
+```
+
+### 4.2 配置合并规则
+
+1. 采样率/带宽：fixed，不参与合并
+2. 可配置参数：以 component 建议值为准，不超出能力范围
+3. 越界处理：component 要求超出范围 → 降级到边界值 + WARNING
+4. 缺失处理：component 未声明 → 使用 capability default
+
+---
+
+## 5. 变更日志
 
 | 日期 | 版本 | 变更内容 |
 |---|---|---|
+| 2026-05-14 | v2.3 | 新增配置分层设计（Capability Range + Config Manager）；更新配置流程 |
+| 2026-05-14 | v2.0 | 简化配置流程，移除协商机制 |
 | 2026-05-14 | v1.0 | 初始版本 |

@@ -1,8 +1,17 @@
 # 接口协议：采集模块 API
 
-> 版本 v1.0 — 2026-05-14
-> 状态：已确立
-> 负责Agent：技术总监
+> 版本 v2.3 — 2026-05-14
+> 状态：已确立（v2.0 变更：简化配置，移除 burst_count）
+
+---
+
+## 变更记录
+
+| 日期 | 版本 | 变更内容 |
+|---|---|---|
+| 2026-05-14 | v2.3 | 更新 /collector/discover 返回值（Capability Range Schema）；采样率/带宽固定值 |
+| 2026-05-14 | v2.0 | 移除 burst_count 字段（组件内部决定）；采样率固定 60MHz；增益默认 20dB |
+| 2026-05-14 | v1.0 | 初始版本 |
 
 ---
 
@@ -28,25 +37,15 @@ Request:
     mode: pluto              # "pluto" | "simulator"
     config:
       frequencies: [5760, 5775, 5800, 5825, 5850]  # MHz
-      sample_rate: 60e6      # Hz
-      burst_count: 200
-      gain: 60               # dB
+      sample_rate: 60e6      # Hz（固定值，不协商）
+      gain: 20               # dB（经验值）
       hop_interval_ms: 100
-      # 以下为 simulator 模式专用
-      iq_file: "/data/test.npy"   # IQ数据文件路径
-      loop: true                    # 是否循环播放
 
 Response:
   200:
     code: 0
     message: "采集已开始"
     session_id: "uuid-string"
-  400:
-    code: 400
-    message: "参数错误"
-  500:
-    code: 500
-    message: "设备未连接"
 ```
 
 #### POST /collector/stop
@@ -62,8 +61,8 @@ Response:
     code: 0
     message: "采集已停止"
     stats:
-      total_bursts: 1000
-      dropped_bursts: 0
+      total_frames: 1000
+      dropped_frames: 0
       duration_ms: 5000
 ```
 
@@ -79,25 +78,11 @@ Response:
     device_info:
       uri: "usb:2.6.5"
       connected: true
-      temperature: 45.2  # 摄氏度
+      temperature: 45.2
     current_config:
       center_freq: 5800
       sample_rate: 60e6
-```
-
-#### POST /collector/config
-更新采集配置（运行时）
-
-```yaml
-Request:
-  body:
-    frequencies: [5760, 5800, 5850]
-    gain: 55
-
-Response:
-  200:
-    code: 0
-    message: "配置已更新"
+      gain: 20
 ```
 
 ### 1.3 设备管理接口
@@ -113,41 +98,36 @@ Response:
       - id: "usb:2.6.5"
         type: pluto
         name: "ADALM PLUTO"
-        serial: "1044730a2d910002300"
         connected: true
         fw_version: "v0.34"
-      - id: "usb:2.10.5"
-        type: pluto
-        name: "ADALM PLUTO"
-        connected: false
 ```
 
-#### POST /collector/connect
-连接设备
+#### POST /collector/discover
+首次运行时探测设备能力（仅首次/SN变化时执行）
 
 ```yaml
-Request:
-  body:
-    device_id: "usb:2.6.5"
-
 Response:
   200:
     code: 0
-    message: "设备已连接"
-```
-
-#### POST /collector/disconnect
-断开设备
-
-```yaml
-Request:
-  body:
-    device_id: "usb:2.6.5"
-
-Response:
-  200:
-    code: 0
-    message: "设备已断开"
+    capabilities:
+      frequency:
+        type: int
+        range: [325000000, 6000000000]
+        default: 5805000000
+      buffer_size:
+        type: int
+        range: [1024, 1048576]
+        default: 524288
+      gain:
+        type: float
+        range: [0, 60]
+        default: 20
+      sample_rate:
+        type: int
+        fixed: 60000000
+      rf_bandwidth:
+        type: int
+        fixed: 56000000
 ```
 
 ### 1.4 模拟器接口
@@ -159,74 +139,60 @@ Response:
 Request:
   body:
     file_path: "/data/test.npy"
-    format: npy         # "npy" | "npz" | "iq"
 
 Response:
   200:
     code: 0
-    message: "文件已加载"
     metadata:
       sample_count: 600000
       sample_rate: 60e6
       duration_ms: 10
-      format: complex64
 ```
 
 ### 1.5 WebSocket 实时流
 
 #### WS /collector/stream
-实时 IQ 数据流（推送模式）
+实时 IQ 帧流（推送模式）
 
-```
-Platform Backend 建立 WebSocket 连接后，Collector Service 持续推送 IQ 数据块：
+**Platform Backend 建立 WebSocket 连接后，Collector 持续推送 IQ 帧：**
 
-Server → Client (JSON):
+```json
 {
-  "type": "iq_data",
-  "session_id": "uuid-string",
-  "timestamp": 1715678900.123,
-  "center_freq": 5800e6,
-  "sample_rate": 60e6,
-  "burst_count": 200,
-  "iq_data": [[real, imag], [real, imag], ...],  # 交错复数数组
-  "sequence": 1234
-}
-
-Server → Client (Binary, 推荐):
-- 帧头: 8 bytes (sequence number, big-endian)
-- 数据: 200 * 1024 * 8 bytes (burst_count * samples_per_burst * complex64)
-
-Server → Client (Error):
-{
-  "type": "error",
-  "code": 500,
-  "message": "设备断开"
+  "type": "iq_frame",
+  "session_id": "uuid",
+  "frame": {
+    "frame_id": 1234,
+    "burst_id": 100,
+    "timestamp": 1715678900.123,
+    "center_freq": 5800e6,
+    "sample_rate": 60e6,
+    "iq_data": [[real, imag], ...],
+    "metadata": {
+      "rx_buffer_size": 8192
+    }
+  }
 }
 ```
 
 ---
 
-## 2. Collector 异常处理
+## 2. 异常处理
 
-```yaml
-Error Codes:
-  400: 参数错误
-  404: 设备未找到
-  409: 设备已被占用
-  500: 设备错误
-  503: 服务不可用
-```
-
-设备断开时的行为：
-1. Collector Service 立即推送 `error` 类型的 WebSocket 消息
-2. 自动尝试重连（最多3次，间隔1秒）
-3. 重连失败后推送 `disconnected` 消息
-4. Platform Backend 收到后应切换到错误状态并通知前端
+| 错误码 | 说明 |
+|---|---|
+| 400 | 参数错误 |
+| 404 | 设备未找到 |
+| 409 | 设备已被占用 |
+| 500 | 设备错误 |
+| 503 | 服务不可用 |
 
 ---
 
-## 3. 变更日志
+## 3. 与 v1.0 的对比
 
-| 日期 | 版本 | 变更内容 |
+| 项目 | v1.0 | v2.0 |
 |---|---|---|
-| 2026-05-14 | v1.0 | 初始版本 |
+| burst_count | config 中声明 | 不在 config 中（组件内部决定）|
+| sample_rate | 可配置 | 固定 60MHz（PLUTO-001）|
+| gain | 60 dB | 20 dB（经验值 PLUTO-004）|
+| /collector/discover | 无 | 新增（能力探测）|

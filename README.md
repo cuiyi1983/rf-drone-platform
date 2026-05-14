@@ -36,39 +36,66 @@
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Frontend (Web UI)                      │
-│         动态表单 / 推理结果 / 调试信息 / Socket.IO         │
+│         Socket.IO（推理结果/调试信息/状态变更）             │
 └────────────────┬────────────────────────────────────────┘
-                   │ Socket.IO（自动降级WebSocket）
-                   ↓
+                   │
+                   ▼
 ┌─────────────────────────────────────────────────────────┐
-│              Platform Backend (python-socketio)             │
-│  ┌─────────────────┐                                   │
-│  │  Plugin Manager │  ← 加载 .zip 推理组件             │
-│  │  (动态加载)     │    读取 manifest                  │
-│  └────────┬────────┘                                   │
-│  ┌────────▼────────┐  ┌─────────────────┐              │
-│  │  Component      │  │  Config Manager │              │
-│  │  Executor       │  │  (外部配置)     │              │
-│  │  (异步/多线程) │  └─────────────────┘              │
-│  └────────┬────────┘                                   │
-│  ┌────────▼────────┐                                   │
-│  │  Device        │  ← NPU → GPU → CPU 自动选择       │
-│  │  Selector      │                                   │
-│  └─────────────────┘                                   │
-└────────────────┬────────────────────────────────────────┘
-                   │ HTTP
-                   ↓
+│              Platform Backend (python-socketio)          │
+│  ┌─────────────────┐  ┌──────────────────────────┐   │
+│  │  Config Manager  │  │   Inference Framework     │   │
+│  │  (外部配置)      │  │  ┌──────────────────────┐ │   │
+│  └─────────────────┘  │  │  │   Frame Queue        │ │   │
+│                       │  │  │   (环形缓冲, 3-5秒) │ │   │
+│                       │  │  └──────────┬───────────┘ │   │
+│                       │  │  ┌──────────▼───────────┐ │   │
+│                       │  │  │  Component Lifecycle│ │   │
+│                       │  │  │  (加载/初始化/崩溃恢复)│ │   │
+│                       │  │  └──────────┬───────────┘ │   │
+│                       │  │  ┌──────────▼───────────┐ │   │
+│                       │  │  │   Device Selector    │ │   │
+│                       │  │  │  (NPU→GPU→CPU自动)  │ │   │
+│                       │  │  └──────────┬───────────┘ │   │
+│                       │  │  ┌──────────▼───────────┐ │   │
+│                       │  │  │     Component       │ │   │
+│                       │  │  │  ┌──────────────┐   │ │   │
+│                       │  │  │  │Model Adapter │   │ │   │
+│                       │  │  │  │ - 模型加载   │   │ │   │
+│                       │  │  │  │ - STFT       │   │ │   │
+│                       │  │  │  │ - 推理执行   │   │ │   │
+│                       │  │  │  └──────────────┘   │ │   │
+│                       │  │  └────────────────────┘ │   │
+│                       │  └──────────────────────────┘   │
+└───────────────────────┬─────────────────────────────────┘
+                        │ IQ原始数据帧
+                        ▼
 ┌─────────────────────────────────────────────────────────┐
-│           Collector Service (独立服务器部署)                │
+│           Collector Service (独立服务器部署)             │
 │  ┌───────────────┐  ┌────────────────┐               │
-│  │  Pluto        │  │  Scan Strategy  │               │
-│  │  Manager      │  │  Manager        │               │
+│  │  Pluto        │  │  Burst Buffer   │               │
+│  │  Manager      │  │  (帧封装)       │               │
 │  └───────────────┘  └────────────────┘               │
-│  ┌───────────────┐                                    │
-│  │  IQ Simulator │  ← 支持导入已有 IQ 数据              │
-│  └───────────────┘                                    │
+│  ┌───────────────┐  ┌────────────────┐               │
+│  │  IQ Simulator │  │  Scan Strategy  │               │
+│  │  (模拟数据)   │  │  (频点轮询)    │               │
+│  └───────────────┘  └────────────────┘               │
 └─────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Inference Framework（推理框架）
+
+**职责**：
+- 帧队列管理（消费不了就扔，不背压）
+- 组件生命周期（加载、初始化、崩溃感知与恢复）
+- 设备选择（NPU → GPU → CPU）
+- 调试信息统一格式化 + 日志保存
+
+**关键约束**：
+- 不感知组件内部逻辑
+- 不感知 Pipeline
+- 消费不了就扔（不需要背压）
 
 ---
 
@@ -87,26 +114,30 @@ component:
 
 capability:
   device_support: [npu, gpu, cpu]
-  async_inference: true
 
 collector_requirements:
-  min_sample_rate: 60e6
-  frequency_range: [5.7e9, 6.0e9]
-  min_burst_count: 200
+  min_data_points: 60000            # 模型需要的数据点数
 
-collector_config_template:
-  frequencies: [5760, 5775, 5800, 5825, 5850]
-  sample_rate: 60e6
-  burst_count: 200
+io:
+  input:
+    - name: iq_frame
+      type: dict
+  output:
+    - name: detections
+    - name: debug      # 统一格式，平台原样展示
+
+config_schema:
+  confidence_threshold:
+    type: number
+    default: 0.5
 ```
 
 ### 设备选择
 
 ```
 优先级: NPU → GPU → CPU
-- 组件声明支持 NPU/GPU/CPU
-- 平台按优先级尝试验证
-- 首个验证成功者被选中
+- 推理框架（ONNX Runtime）自动检测可用设备
+- 组件 manifest.device_support 仅作为声明
 ```
 
 ### 组件打包格式
@@ -122,15 +153,36 @@ my_component.zip/
 
 ---
 
+## 数据流
+
+```
+Collector ──IQ帧──→ Platform ──转发──→ Inference Framework
+                                              │
+                                              ▼
+                                    Frame Queue（环形缓冲）
+                                    消费不了就扔
+                                              │
+                                              ▼
+                                    Component.infer(iq_frame)
+                                              │
+                                              ▼
+                                    result + debug
+                                              │
+                                              ▼
+                                    Socket.IO → Frontend
+```
+
+---
+
 ## 接口协议
 
 所有跨模块接口定义在 `interfaces/` 目录：
 
-| 文件 | 用途 |
-|---|---|
-| `interfaces/component-manifest.yaml` | 推理组件自描述协议 |
-| `interfaces/collector-api.yaml` | 采集模块 API |
-| `interfaces/platform-collector.yaml` | 平台↔采集协同协议 |
+| 文件 | 版本 | 用途 |
+|---|---|---|
+| `interfaces/component-manifest.yaml` | v2.0 | 推理组件自描述协议 |
+| `interfaces/collector-api.yaml` | v2.0 | 采集模块 API |
+| `interfaces/platform-collector.yaml` | v2.0 | 平台↔采集协同协议 |
 
 ---
 
@@ -151,9 +203,9 @@ my_component.zip/
 rf-drone-platform/
 ├── interfaces/           # 接口协议定义（技术总监维护）
 ├── collector/          # 采集模块（Pluto + Simulator）
-├── inference/          # 推理模块（待实现）
-│   ├── framework/       # 推理框架核心
-│   └── plugins/         # 推理组件（动态加载）
+├── inference/          # 推理模块
+│   ├── framework/     # Inference Framework（框架）
+│   └── plugins/        # 推理组件（动态加载）
 ├── ui/                 # Web 前端
 └── tests/              # 集成测试
 ```
@@ -164,8 +216,8 @@ rf-drone-platform/
 
 | Agent | 职责 |
 |---|---|
-| **技术总监** | 架构守护、接口审批、原则管理 |
-| **小边** | 推理模块实现 |
-| **小采采** | 采集模块实现 |
-| **小页** | Web UI 实现 |
+| **技术总监** | 架构守护、接口审批、约束跟踪 |
+| **小边** | Model Adapter + Inference Framework |
+| **小采采** | Collector Service + Pluto 管理 |
+| **小页** | Web UI + Socket.IO 前端 |
 | **小崔崔** | 训练模块（在 RF-Training 仓库）|
