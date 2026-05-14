@@ -148,10 +148,7 @@ class SocketIOServer:
         def on_disconnect(sid):
             logger.info("Client disconnected: sid=%s", sid)
 
-        self._server = socketio.Server()
-        # Transfer event handlers to the main server instance
-        # (keep reference for emit calls)
-        self._server = sio
+        self._server = sio  # only assign once – sio is the properly-configured instance above
 
         app = socketio.WSGIApp(sio)
         import werkzeug.serving as serving

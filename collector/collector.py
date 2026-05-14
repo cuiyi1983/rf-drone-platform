@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 @dataclass
 class CollectorConfig:
+    device_uri: Optional[str] = None   # e.g. "usb:2.6.5"; None = auto-discover
     frequencies: list[int] = field(default_factory=lambda: [5_805_000_000])
     sample_rate: int = 60_000_000
     buffer_size: int = 524_288

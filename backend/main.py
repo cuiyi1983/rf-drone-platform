@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .api.components import inject_platform as inject_components
@@ -463,18 +464,13 @@ class MockComponent:
 
 # ── FastAPI App ──────────────────────────────────────────────────────────────
 
-app = FastAPI(title="RF-Drone-Platform Backend", version="1.0.0")
-platform = Platform()
-
-
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     await platform.startup(app)
-
-
-@app.on_event("shutdown")
-async def shutdown():
+    yield
     await platform.shutdown()
+
+app = FastAPI(title="RF-Drone-Platform Backend", version="1.0.0", lifespan=lifespan)
 
 
 # 注册路由
