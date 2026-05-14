@@ -1,7 +1,7 @@
 # 接口协议：采集模块 API
 
-> 版本 v2.4 — 2026-05-14
-> 状态：已确立（v2.0 变更：简化配置，移除 burst_count）
+> 版本 v2.5 — 2026-05-15
+> 状态：已确立
 
 ---
 
@@ -9,7 +9,7 @@
 
 | 日期 | 版本 | 变更内容 |
 |---|---|---|
-| 2026-05-14 | v2.4 | 修复 /collector/start config 缺少 buffer_size；更新过期示例为 2 频点 |
+| 2026-05-15 | v2.5 | WebSocket → Socket.IO，与 platform-frontend.yaml 一致 |
 | 2026-05-14 | v2.0 | 移除 burst_count 字段（组件内部决定）；采样率固定 60MHz；增益默认 20dB |
 | 2026-05-14 | v1.0 | 初始版本 |
 
@@ -151,14 +151,18 @@ Response:
       duration_ms: 10
 ```
 
-### 1.5 WebSocket 实时流
+### 1.5 Socket.IO 实时流
 
-#### WS /collector/stream
+#### Socket.IO /collector/stream
 实时 IQ 帧流（推送模式）
 
-**Platform Backend 建立 WebSocket 连接后，Collector 持续推送 IQ 帧：**
+**Platform Backend 通过 Socket.IO 连接 Collector 推送 IQ 帧：**
 
-```json
+```yaml
+Event: iq_frame
+Namespace: /
+Room: {session_id}
+
 {
   "type": "iq_frame",
   "session_id": "uuid",
@@ -166,8 +170,8 @@ Response:
     "frame_id": 1234,
     "burst_id": 100,
     "timestamp": 1715678900.123,
-    "center_freq": 5800e6,
-    "sample_rate": 60e6,
+    "center_freq": 5805000000,
+    "sample_rate": 60000000,
     "iq_data": [[real, imag], ...],
     "metadata": {
       "rx_buffer_size": 524288
@@ -175,6 +179,9 @@ Response:
   }
 }
 ```
+
+
+**注意**：Collector 与 Platform Backend 之间使用 Socket.IO 连接，与前端无关。
 
 ---
 
