@@ -1,6 +1,6 @@
 # 接口协议：平台前后台接口
 
-> 版本 v1.0 — 2026-05-14
+> 版本 v1.1 — 2026-05-15
 > 状态：草稿
 
 ---
@@ -133,9 +133,9 @@ session_id: string  # 可选, 不提供则返回所有活跃会话
       },
       "current_config": {
         "confidence_threshold": 0.5,
-        "rx_buffer_size": 524288,
-        "rx_lo": 5800000000,
-        "rx_gain": 20
+        "buffer_size": 524288,
+        "frequencies": [5805000000, 2450000000],
+        "gain": 20
       },
       "started_at": "2026-05-14T15:00:00Z"
     }
@@ -304,7 +304,7 @@ GET /api/v1/devices
 
 ---
 
-#### 获取设备能力
+#### 获取设备能力（统一格式）
 
 ```
 GET /api/v1/devices/{id}/capabilities
@@ -321,33 +321,34 @@ id: string  # 设备ID
 ```yaml
 {
   "capabilities": {
-    "frequency_range": {
-      "min": 325000000,
-      "max": 3800000000
-    },
-    "extended_freq_range": {
-      "min": 5700000000,
-      "max": 5900000000
-    },
-    "sample_rate": {
-      "fixed": 60000000
-    },
-    "gain": {
-      "min": 0,
-      "max": 74,
-      "default": 20,
-      "step": 1
+    "frequency": {
+      "type": "int",
+      "range": [325000000, 6000000000],
+      "default": 5805000000
     },
     "buffer_size": {
-      "supported": [65536, 262144, 524288, 1048576],
+      "type": "int",
+      "range": [1024, 1048576],
       "default": 524288
     },
-    "bandwidth": {
-      "supported": [56000000]
+    "gain": {
+      "type": "float",
+      "range": [0, 60],
+      "default": 20
+    },
+    "sample_rate": {
+      "type": "int",
+      "fixed": 60000000
+    },
+    "rf_bandwidth": {
+      "type": "int",
+      "fixed": 56000000
     }
   }
 }
 ```
+
+**说明**：与 collector-api.yaml 的 discover 返回格式保持一致。
 
 ---
 
@@ -633,4 +634,5 @@ socket.leave('session:sess_abc123');
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-05-15 | v1.1 | 设备能力格式与 collector-api.yaml 统一；补充 Simulator 控制接口；补充运行时配置更新 |
 | 2026-05-14 | v1.0 | 初始版本，定义 REST API + Socket.IO 接口 |
