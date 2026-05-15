@@ -283,6 +283,6 @@ if __name__ == "__main__":
     )
 
     # Allow port override from env
-    http_port = int(os.environ.get("COLLECTOR_HTTP_PORT", 8080))
+    http_port = int(os.environ.get("COLLECTOR_HTTP_PORT", 8081))
     app = create_app()
-    app.run(host="0.0.0.0", port=http_port, debug=False)
+    app.run(host="0.0.0.0", port=http_port, debug=False, threaded=True)
