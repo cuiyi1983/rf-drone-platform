@@ -149,7 +149,7 @@ iq_frame:
   sample_rate: 60e6          # 采样率（Hz）
   iq_data: complex[]          # 原始 IQ 数据
   metadata:
-    rx_buffer_size: 8192
+    rx_buffer_size: 524288
 ```
 
 ### 推理结果格式
