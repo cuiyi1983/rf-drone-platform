@@ -21,6 +21,11 @@ dev = [
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*", "collector*", "interfaces*"]
+exclude = ["backend/.venv", "collector/.venv", "interfaces/.venv", "tests*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
 asyncio_mode = "auto"
