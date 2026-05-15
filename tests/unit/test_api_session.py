@@ -15,8 +15,17 @@ class TestSessionAPI:
 
     @pytest.fixture(autouse=True)
     async def setup(self):
-        """每个测试前初始化"""
+        """每个测试前初始化，测试隔离用mock设备注册"""
         await platform.startup(app)
+        # 测试隔离：注册最小化测试设备（仅用于单元测试隔离）
+        if not platform._devices:
+            platform._devices["pluto_usb_2.6.5"] = {
+                "id": "pluto_usb_2.6.5",
+                "type": "PlutoSDR",
+                "connected": False,
+                "uri": "usb:2.6.5",
+                "firmware_version": "0.34",
+            }
 
     @pytest.fixture
     async def client(self):
