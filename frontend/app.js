@@ -159,8 +159,10 @@ async function stopSession() {
 }
 
 function cleanup() {
-  if (socket && socket.connected && currentSessionId) {
-    socket.emit('unsubscribe', { session_id: currentSessionId });
+  if (socket) {
+    if (socket.connected && currentSessionId) {
+      socket.emit('unsubscribe', { session_id: currentSessionId });
+    }
     socket.disconnect();
     socket = null;
   }

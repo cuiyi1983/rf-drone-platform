@@ -22,6 +22,8 @@
       <div class="form-row">
         <label for="collector-type">采集器类型</label>
         <select id="collector-type">
+          <!-- 后端暂不支持按类型过滤，此选项仅供 UI 展示，设备列表为全量 -->
+          <option value="">全部类型</option>
           <option value="PlutoSDR">PlutoSDR</option>
           <option value="Simulator">Simulator（模拟器）</option>
         </select>
