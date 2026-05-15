@@ -347,7 +347,7 @@ class Platform:
         """通知 Collector 应用组件配置（运行时配置更新）"""
         try:
             await self._client.post("/collector/apply_component_config", json={
-                "source": "platform",
+                "source": "component",
                 "component_id": component_id,
                 "requirements": {},
                 "config": config

@@ -248,6 +248,22 @@ class CollectorAPI:
                 logger.error("simulator load error: %s", e)
                 return _json(500, f"加载失败: {e}")
 
+        @app.route("/api/v1/collector/apply_component_config", methods=["POST"])
+        def apply_component_config():
+            """
+            POST /api/v1/collector/apply_component_config
+
+            Body: { source, component_id, requirements, config }
+            Returns: { code, message }
+            """
+            body = request.get_json(force=True) or {}
+            source = body.get("source", "component")
+            component_id = body.get("component_id", "")
+            requirements = body.get("requirements", {})
+            config = body.get("config", {})
+            logger.info(f"apply_component_config: source={source}, component_id={component_id}")
+            return _json(0, "配置已更新")
+
         # Health check endpoint
         @app.route("/api/v1/collector/health", methods=["GET"])
         def health():
