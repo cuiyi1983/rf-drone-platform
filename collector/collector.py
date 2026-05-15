@@ -265,6 +265,7 @@ class Collector:
 
     def get_devices(self) -> list[dict]:
         """Return list of discovered devices (matches /collector/devices)."""
+        logger.info("Collector: 触发扫描，来源=get_devices()")
         try:
             infos = discover_devices()
             return [

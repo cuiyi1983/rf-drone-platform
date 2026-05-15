@@ -327,7 +327,14 @@ def get_device_class() -> type[IDevice]:
 
 def discover_devices() -> list[DeviceInfo]:
     """Scan for available Pluto devices."""
-    return get_device_class().discover()
+    logger.info("Collector: discover_devices() called, scanning for devices...")
+    try:
+        devices = get_device_class().discover()
+        logger.info("Collector: discover_devices() 返回 %d 个设备: %s", len(devices), [d.id for d in devices])
+        return devices
+    except Exception as e:
+        logger.info("Collector: 设备扫描异常: %s", e)
+        return []
 
 
 def connect_device(uri: str) -> IDevice:

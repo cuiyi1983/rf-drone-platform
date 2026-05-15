@@ -205,6 +205,7 @@ class CollectorAPI:
             """
             GET /api/v1/collector/devices
             """
+            logger.info("Collector: 触发扫描，来源=HTTP GET /collector/devices")
             devs = self._collector.get_devices()
             return {"code": 0, "message": "ok", "devices": devs}, 200
 
