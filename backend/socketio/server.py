@@ -83,6 +83,7 @@ class SocketIOServer:
         sio.register_namespace(namespace)
 
         self._sio = sio
+        self._namespace = namespace
 
         # 挂载到 ASGI app
         socketio.ASGIApp(sio, app)

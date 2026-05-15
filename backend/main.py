@@ -8,7 +8,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .api.components import inject_platform as inject_components
@@ -284,7 +283,8 @@ class Platform:
         if framework:
             framework.update_config(merged_config)
 
-        await self._collector_apply_config(session_id, merged_config)
+        component_id = self._sessions[session_id]["component_id"]
+        await self._collector_apply_config(component_id, merged_config)
 
         return {"session_id": session_id, "updated_config": merged_config, "warnings": warnings}
 
@@ -343,11 +343,13 @@ class Platform:
         except Exception as e:
             logger.warning(f"Collector stop failed: {e}")
 
-    async def _collector_apply_config(self, session_id: str, config: dict) -> None:
-        """通知 Collector 更新配置"""
+    async def _collector_apply_config(self, component_id: str, config: dict) -> None:
+        """通知 Collector 应用组件配置（运行时配置更新）"""
         try:
-            await self._client.post("/collector/apply_config", json={
-                "session_id": session_id,
+            await self._client.post("/collector/apply_component_config", json={
+                "source": "platform",
+                "component_id": component_id,
+                "requirements": {},
                 "config": config
             })
         except Exception as e:
@@ -464,13 +466,18 @@ class MockComponent:
 
 # ── FastAPI App ──────────────────────────────────────────────────────────────
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await platform.startup(app)
-    yield
-    await platform.shutdown()
+app = FastAPI(title="RF-Drone-Platform Backend", version="1.0.0")
+platform = Platform()
 
-app = FastAPI(title="RF-Drone-Platform Backend", version="1.0.0", lifespan=lifespan)
+
+@app.on_event("startup")
+async def startup():
+    await platform.startup(app)
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    await platform.shutdown()
 
 
 # 注册路由
