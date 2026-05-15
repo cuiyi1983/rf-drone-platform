@@ -133,26 +133,19 @@ class Platform:
                 for dev in data.get("devices", []):
                     self._devices[dev["id"]] = dev
                     logger.info(f"Platform: 发现设备 {dev['id']}")
-                return
         except Exception as e:
             logger.warning(f"Platform: 无法从 Collector 发现设备: {e}")
-
-        # Mock 设备列表
-        self._devices = {
-            "pluto_usb_2.6.5": {
-                "id": "pluto_usb_2.6.5",
-                "type": "PlutoSDR",
-                "connected": True,
-                "uri": "usb:2.6.5",
-                "firmware_version": "0.32",
-                "available_freq_ranges": [
-                    {"start": 325_000_000, "end": 3_800_000_000},
-                    {"start": 5_700_000_000, "end": 5_900_000_000}
-                ],
-                "sample_rates": [60_000_000],
-                "buffer_sizes": [65536, 262144, 524288, 1_048_576]
+            # 测试隔离用：Collector 不可用时注册最小化设备列表（仅测试环境）
+            # 真实环境应确保 Collector 正常运行
+            self._devices = {
+                "pluto_usb_2.6.5": {
+                    "id": "pluto_usb_2.6.5",
+                    "type": "PlutoSDR",
+                    "connected": False,
+                    "uri": "usb:2.6.5",
+                    "firmware_version": "0.34",
+                }
             }
-        }
 
     async def _load_collector_capabilities(self) -> None:
         """从 Collector 获取能力范围"""
@@ -166,7 +159,7 @@ class Platform:
         except Exception as e:
             logger.warning(f"Platform: 无法获取 Collector capabilities: {e}")
 
-        # 使用默认值（根据 ARCHITECTURE.md）
+        # 使用 Pluto 硬件默认值（从 ARCHITECTURE.md，Collector 不可用时使用）
         default_caps = {
             "frequency": {"type": "int", "range": [325_000_000, 6_000_000_000], "default": 5_805_000_000},
             "buffer_size": {"type": "int", "range": [1024, 1_048_576], "default": 524_288},

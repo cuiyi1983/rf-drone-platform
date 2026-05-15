@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # Device configuration
 # -----------------------------------------------------------------------------
-# Override with "mock" or "pluto" to select implementation
-DEVICE_IMPL: str = "mock"
+# Override with "mock" for unit testing only (never in production)
+DEVICE_IMPL: str = "pluto"
 
 
 # -----------------------------------------------------------------------------
