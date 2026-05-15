@@ -127,7 +127,7 @@ class Platform:
     async def _discover_devices(self) -> None:
         """从 Collector 发现设备"""
         try:
-            resp = await self._client.get("/collector/devices")
+            resp = await self._client.get("/api/v1/collector/devices")
             if resp.status_code == 200:
                 data = resp.json()
                 for dev in data.get("devices", []):
@@ -140,7 +140,7 @@ class Platform:
     async def _load_collector_capabilities(self) -> None:
         """从 Collector 获取能力范围"""
         try:
-            resp = await self._client.get("/collector/discover")
+            resp = await self._client.get("/api/v1/collector/discover")
             if resp.status_code == 200:
                 caps = resp.json().get("capabilities", {})
                 self.config_manager.set_collector_capabilities(caps)
@@ -312,7 +312,7 @@ class Platform:
     async def _collector_start(self, session_id: str, config: dict) -> None:
         """通知 Collector 开始采集"""
         try:
-            await self._client.post("/collector/start", json={
+            await self._client.post("/api/v1/collector/start", json={
                 "session_id": session_id,
                 "config": config
             })
@@ -322,14 +322,14 @@ class Platform:
     async def _collector_stop(self, session_id: str) -> None:
         """通知 Collector 停止采集"""
         try:
-            await self._client.post("/collector/stop", json={"session_id": session_id})
+            await self._client.post("/api/v1/collector/stop", json={"session_id": session_id})
         except Exception as e:
             logger.warning(f"Collector stop failed: {e}")
 
     async def _collector_apply_config(self, component_id: str, config: dict) -> None:
         """通知 Collector 应用组件配置（运行时配置更新）"""
         try:
-            await self._client.post("/collector/apply_component_config", json={
+            await self._client.post("/api/v1/collector/apply_component_config", json={
                 "source": "component",
                 "component_id": component_id,
                 "requirements": {},
