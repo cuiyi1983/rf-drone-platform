@@ -253,9 +253,18 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8080
 
 ### 前端
 
-直接用浏览器打开 `frontend/index.html` 即可。
+需要通过 HTTP 服务器访问（不可直接打开 HTML 文件，否则 API 路径会出错）。
 
-离线模式下（后端未启动）会自动切换到 Mock 数据流，可验证 UI 功能。
+```bash
+# 方式1：Python 内置服务器
+cd frontend && python -m http.server 8082
+# 然后访问 http://localhost:8082
+
+# 方式2：Node.js（如果有）
+npx serve . -p 8082
+```
+
+> 不可直接双击 `index.html` 打开，会导致 API 调用路径错误。
 
 ### 端口约定
 
