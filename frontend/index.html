@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RF Drone Platform — 无人机检测控制台</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <div class="container">
+
+    <!-- ===== 标题 ===== -->
+    <header class="header">
+      <h1>🛸 RF Drone Platform</h1>
+      <p class="subtitle">无人机射频检测与识别系统</p>
+    </header>
+
+    <!-- ===== 设备选择器 ===== -->
+    <section class="card">
+      <h2>设备选择</h2>
+      <div class="form-row">
+        <label for="collector-type">采集器类型</label>
+        <select id="collector-type">
+          <option value="PlutoSDR">PlutoSDR</option>
+          <option value="Simulator">Simulator（模拟器）</option>
+        </select>
+
+        <label for="device-select">设备</label>
+        <select id="device-select">
+          <option value="">— 加载中 —</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- ===== 采集控制 ===== -->
+    <section class="card">
+      <h2>会话控制</h2>
+      <div class="controls">
+        <button id="btn-start" class="btn btn-primary" disabled>▶ 启动会话</button>
+        <button id="btn-stop" class="btn btn-danger" disabled>■ 停止会话</button>
+        <button id="btn-refresh-devices" class="btn btn-secondary">⟳ 刷新设备</button>
+      </div>
+      <div id="session-info" class="session-info" style="display:none;">
+        <span class="badge" id="session-status-badge">—</span>
+        <span id="session-id-display"></span>
+      </div>
+    </section>
+
+    <!-- ===== 状态显示 ===== -->
+    <section class="card">
+      <h2>设备状态</h2>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <span class="stat-label">设备连接</span>
+          <span class="stat-value" id="stat-connection">—</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">采集状态</span>
+          <span class="stat-value" id="stat-collecting">—</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">采集帧率 (FPS)</span>
+          <span class="stat-value" id="stat-fps">—</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">丢帧率</span>
+          <span class="stat-value" id="stat-dropped">—</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">总帧数</span>
+          <span class="stat-value" id="stat-total-frames">—</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">缓冲区深度</span>
+          <span class="stat-value" id="stat-buffer-level">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 推理结果 ===== -->
+    <section class="card">
+      <h2>推理结果 <span id="result-count" class="result-count">0 条</span></h2>
+      <div id="detection-list" class="detection-list">
+        <div class="empty-state">暂无检测结果，等待启动会话…</div>
+      </div>
+    </section>
+
+    <!-- ===== 错误日志 ===== -->
+    <section class="card">
+      <h2>运行日志</h2>
+      <div id="log-container" class="log-container">
+        <div class="log-entry log-info">✅ 前端已初始化</div>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
