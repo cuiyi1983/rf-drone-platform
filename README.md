@@ -221,3 +221,45 @@ rf-drone-platform/
 | **小采采** | Collector Service + Pluto 管理 |
 | **小页** | Web UI + Socket.IO 前端 |
 | **小崔崔** | 训练模块（在 RF-Training 仓库）|
+
+---
+
+## 快速启动
+
+### 环境准备
+
+```bash
+# 安装依赖（Python 3.10+）
+pip install -e ".[dev]
+```
+
+### 启动服务
+
+**Collector Service（端口 8081）**
+
+```bash
+# 方式1：直接运行
+python -m collector.api
+
+# 方式2：指定端口
+COLLECTOR_HTTP_PORT=8081 python -m collector.api
+```
+
+**Platform Backend（端口 8080）**
+
+```bash
+uvicorn backend.main:app --host 0.0.0.0 --port 8080
+```
+
+### 前端
+
+直接用浏览器打开 `frontend/index.html` 即可。
+
+离线模式下（后端未启动）会自动切换到 Mock 数据流，可验证 UI 功能。
+
+### 端口约定
+
+| 服务 | 端口 | 说明 |
+|---|---|---|
+| Platform Backend | 8080 | REST API + Socket.IO |
+| Collector Service | 8081 | 采集模块 API（独立部署）|
