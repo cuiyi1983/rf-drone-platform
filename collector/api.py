@@ -26,11 +26,17 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 # App factory
 # ------------------------------------------------------------------
-def create_app() -> Flask:
+# Mock devices mode (set via --mock-devices CLI flag)
+_mock_devices_mode = False
+
+
+def create_app(mock_devices: bool = False) -> Flask:
+    global _mock_devices_mode
+    _mock_devices_mode = mock_devices
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
 
-    api = CollectorAPI()
+    api = CollectorAPI(mock_devices=mock_devices)
     api.register_routes(app)
 
     return app
@@ -70,10 +76,13 @@ class CollectorAPI:
         api.register_routes(app)
     """
 
-    def __init__(self):
+    def __init__(self, mock_devices: bool = False):
         self._collector = Collector()
         self._simulator = IQSimulator()
         self._socketio_started = False
+        self._mock_devices = mock_devices
+        if mock_devices:
+            logger.info("CollectorAPI: mock_devices 模式启用")
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -206,6 +215,12 @@ class CollectorAPI:
             GET /api/v1/collector/devices
             """
             logger.info("Collector: 触发扫描，来源=HTTP GET /collector/devices")
+            if self._mock_devices:
+                mock_devs = [
+                    {"id": "sim:pluto_2.6.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
+                    {"id": "sim:pluto_2.10.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
+                ]
+                return {"code": 0, "message": "ok", "devices": mock_devs}, 200
             devs = self._collector.get_devices()
             return {"code": 0, "message": "ok", "devices": devs}, 200
 
@@ -276,13 +291,17 @@ class CollectorAPI:
 # ------------------------------------------------------------------
 if __name__ == "__main__":
     import os
+    import argparse
 
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO"),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    # Allow port override from env
-    http_port = int(os.environ.get("COLLECTOR_HTTP_PORT", 8081))
-    app = create_app()
-    app.run(host="0.0.0.0", port=http_port, debug=False, threaded=True)
+    parser = argparse.ArgumentParser(description="Collector Service")
+    parser.add_argument("--mock-devices", action="store_true", help="使用模拟 Pluto 设备（用于测试）")
+    parser.add_argument("--port", type=int, default=8081, help="HTTP 端口（默认 8081）")
+    args = parser.parse_args()
+
+    app = create_app(mock_devices=args.mock_devices)
+    app.run(host="0.0.0.0", port=args.port, debug=False, threaded=True)
