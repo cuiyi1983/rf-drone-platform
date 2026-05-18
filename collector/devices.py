@@ -218,8 +218,10 @@ class PlutoDevice(IDevice):
     def __init__(self, uri: str):
         import adi
 
+        logger.info("PlutoDevice.__init__ 创建实例 uri=%s", uri)
         self._uri = uri
         self._sdr: adi.Pluto = adi.Pluto(uri=uri)
+        logger.info("PlutoDevice.__init__ adi.Pluto(uri=uri) 创建完成")
         self._frequency = 5_805_000_000
         self._gain = 20.0
         self._buffer_size = 524_288
@@ -229,11 +231,15 @@ class PlutoDevice(IDevice):
         import adi
         import iio
 
+        logger.info("PlutoDevice.discover() 开始扫描")
         try:
             devices = []
+            logger.info("PlutoDevice: 调用 iio.scan_contexts()")
             contexts = iio.scan_contexts()
+            logger.info("PlutoDevice: iio.scan_contexts() 返回 %d 个上下文: %s", len(contexts), list(contexts))
             for uri in contexts:
                 try:
+                    logger.info("PlutoDevice: 创建 Pluto uri=%s", uri)
                     sdr = adi.Pluto(uri=uri)
                     devices.append(
                         DeviceInfo(
@@ -245,11 +251,13 @@ class PlutoDevice(IDevice):
                             serial=getattr(sdr, "serial", None),
                         )
                     )
-                except Exception:
+                except Exception as e:
+                    logger.warning("PlutoDevice: 创建 Pluto 实例失败 uri=%s: %s", uri, e)
                     pass
+            logger.info("PlutoDevice.discover() 完成，返回 %d 个设备", len(devices))
             return devices
         except Exception as e:
-            logger.warning("Pluto discover failed: %s", e)
+            logger.warning("PlutoDevice.discover() 失败: %s", e)
             return []
 
     @classmethod
