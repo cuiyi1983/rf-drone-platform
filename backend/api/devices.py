@@ -32,9 +32,14 @@ async def refresh_devices() -> dict:
     POST /api/v1/devices/refresh
     重新扫描 Collector 设备列表并返回
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("API: POST /api/v1/devices/refresh 被调用")
     if _platform_ref is None:
         raise HTTPException(status_code=500, detail="Platform not initialized")
-    return await _platform_ref.refresh_devices()
+    result = await _platform_ref.refresh_devices()
+    logger.info(f"API: refresh_devices 返回 {result}")
+    return result
 
 
 @router.get("/{device_id}/capabilities")
