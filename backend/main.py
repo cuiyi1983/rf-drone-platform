@@ -130,15 +130,18 @@ class Platform:
 
     async def _discover_devices(self) -> None:
         """从 Collector 发现设备"""
+        logger.info(f"Platform: _discover_devices 开始，目标是 {self._collector_base_url}/api/v1/collector/devices")
         try:
             resp = await self._client.get("/api/v1/collector/devices")
+            logger.info(f"Platform: Collector 响应 status={resp.status_code} body={resp.text[:200]}")
             if resp.status_code == 200:
                 data = resp.json()
                 for dev in data.get("devices", []):
                     self._devices[dev["id"]] = dev
                     logger.info(f"Platform: 发现设备 {dev['id']}")
         except Exception as e:
-            logger.warning(f"Platform: 无法从 Collector 发现设备: {e}")
+            import logging
+            logging.getLogger(__name__).error(f"Platform: 无法从 Collector 发现设备: {type(e).__name__} {e}", exc_info=True)
             # 禁止 mock 降级，设备列表保持为空
 
     async def _load_collector_capabilities(self) -> None:
@@ -314,17 +317,19 @@ class Platform:
     async def refresh_devices(self) -> dict:
         """重新扫描 Collector 设备列表并更新缓存"""
         self._devices.clear()
+        logger.info(f"Platform: 开始刷新设备，目标是 {self._collector_base_url}/api/v1/collector/devices")
         try:
             resp = await self._client.get("/api/v1/collector/devices")
+            logger.info(f"Platform: Collector 响应 status={resp.status_code} body={resp.text[:200]}")
             if resp.status_code == 200:
                 data = resp.json()
+                logger.info(f"Platform: 解析到 devices 列表: {data.get('devices', [])}")
                 for dev in data.get("devices", []):
                     self._devices[dev["id"]] = dev
-                    import logging
-                    logging.getLogger(__name__).info(f"Platform: 刷新设备 {dev['id']}")
+                    logger.info(f"Platform: 刷新设备 {dev['id']}")
         except Exception as e:
             import logging
-            logging.getLogger(__name__).warning(f"Platform: 刷新设备失败: {e}")
+            logging.getLogger(__name__).error(f"Platform: 刷新设备失败: {type(e).__name__} {e}", exc_info=True)
         return {"devices": list(self._devices.values())}
 
     # ── Collector 通信 ───────────────────────────────────────────
