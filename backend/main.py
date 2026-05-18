@@ -54,7 +54,7 @@ class Platform:
         self._devices: dict[str, dict] = {}
 
         # HTTP 客户端
-        self._client: Optional[Any] = None
+        self._requests: Optional[Any] = None
 
     # ── 初始化 ───────────────────────────────────────────────────
 
@@ -63,8 +63,9 @@ class Platform:
         logger.info("Platform: 启动中...")
 
         # 初始化 HTTP 客户端
-        import httpx
-        self._client = httpx.AsyncClient(base_url=self._collector_base_url, timeout=10.0)
+        import requests
+        self._requests = requests.Session()
+        self._requests.headers.update({"User-Agent": "RF-Drone-Platform/1.0"})
 
         # 注册模拟组件
         self._register_mock_components()
@@ -87,8 +88,8 @@ class Platform:
         # 停止所有会话
         for session_id in list(self._sessions.keys()):
             await self.stop_session(session_id)
-        if self._client:
-            await self._client.aclose()
+        if self._requests:
+            self._requests.close()
         logger.info("Platform: 已关闭")
 
     # ── 模拟数据 ─────────────────────────────────────────────────
@@ -132,7 +133,7 @@ class Platform:
         """从 Collector 发现设备"""
         logger.info(f"Platform: _discover_devices 开始，目标是 {self._collector_base_url}/api/v1/collector/devices")
         try:
-            resp = await self._client.get("/api/v1/collector/devices")
+            resp = await asyncio.to_thread(self._requests.get, f"{self._collector_base_url}/api/v1/collector/devices", timeout=10)
             logger.info(f"Platform: Collector 响应 status={resp.status_code} body={resp.text[:200]}")
             if resp.status_code == 200:
                 data = resp.json()
@@ -147,7 +148,7 @@ class Platform:
     async def _load_collector_capabilities(self) -> None:
         """从 Collector 获取能力范围"""
         try:
-            resp = await self._client.get("/api/v1/collector/discover")
+            resp = await asyncio.to_thread(self._requests.get, f"{self._collector_base_url}/api/v1/collector/discover", timeout=10)
             if resp.status_code == 200:
                 caps = resp.json().get("capabilities", {})
                 self.config_manager.set_collector_capabilities(caps)
@@ -319,7 +320,7 @@ class Platform:
         self._devices.clear()
         logger.info(f"Platform: 开始刷新设备，目标是 {self._collector_base_url}/api/v1/collector/devices")
         try:
-            resp = await self._client.get("/api/v1/collector/devices")
+            resp = await asyncio.to_thread(self._requests.get, f"{self._collector_base_url}/api/v1/collector/devices", timeout=10)
             logger.info(f"Platform: Collector 响应 status={resp.status_code} body={resp.text[:200]}")
             if resp.status_code == 200:
                 data = resp.json()
@@ -337,29 +338,29 @@ class Platform:
     async def _collector_start(self, session_id: str, config: dict) -> None:
         """通知 Collector 开始采集"""
         try:
-            await self._client.post("/api/v1/collector/start", json={
+            await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/start", json={
                 "session_id": session_id,
                 "config": config
-            })
+            }, timeout=10)
         except Exception as e:
             logger.warning(f"Collector start failed: {e}")
 
     async def _collector_stop(self, session_id: str) -> None:
         """通知 Collector 停止采集"""
         try:
-            await self._client.post("/api/v1/collector/stop", json={"session_id": session_id})
+            await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/stop", json={"session_id": session_id}, timeout=10)
         except Exception as e:
             logger.warning(f"Collector stop failed: {e}")
 
     async def _collector_apply_config(self, component_id: str, config: dict) -> None:
         """通知 Collector 应用组件配置（运行时配置更新）"""
         try:
-            await self._client.post("/api/v1/collector/apply_component_config", json={
+            await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/apply_component_config", json={
                 "source": "component",
                 "component_id": component_id,
                 "requirements": {},
                 "config": config
-            })
+            }, timeout=10)
         except Exception as e:
             logger.warning(f"Collector apply_config failed: {e}")
 
