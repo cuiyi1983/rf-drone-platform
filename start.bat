@@ -21,7 +21,7 @@ start "Collector-Service" cmd /k "echo Collector Service 启动中... && python 
 timeout /t 2 >nul
 
 echo [2/3] 启动 Platform Backend (端口 5100)...
-start "Platform-Backend" cmd /k "echo Platform Backend 启动中... && uvicorn backend.main:app --host 0.0.0.0 --port 5100"
+start "Platform-Backend" cmd /k "echo Platform Backend 启动中... && uvicorn backend.main:app --host 0.0.0.0 --port 5100 --app-dir "%cd%""
 
 timeout /t 2 >nul
 

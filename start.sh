@@ -29,7 +29,7 @@ start_collector() {
 # 启动 Platform Backend
 start_platform() {
     echo "[2/2] 启动 Platform Backend (端口 5100)..."
-    uvicorn backend.main:app --host 0.0.0.0 --port 5100 &
+    uvicorn backend.main:app --host 0.0.0.0 --port 5100 --app-dir "$SCRIPT_DIR" &
     PLATFORM_PID=$!
     echo "Platform PID: $PLATFORM_PID"
 }
