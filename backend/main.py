@@ -311,6 +311,22 @@ class Platform:
         caps = self.config_manager.get_collector_capabilities()
         return {"capabilities": caps}
 
+    async def refresh_devices(self) -> dict:
+        """重新扫描 Collector 设备列表并更新缓存"""
+        self._devices.clear()
+        try:
+            resp = await self._client.get("/api/v1/collector/devices")
+            if resp.status_code == 200:
+                data = resp.json()
+                for dev in data.get("devices", []):
+                    self._devices[dev["id"]] = dev
+                    import logging
+                    logging.getLogger(__name__).info(f"Platform: 刷新设备 {dev['id']}")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Platform: 刷新设备失败: {e}")
+        return {"devices": list(self._devices.values())}
+
     # ── Collector 通信 ───────────────────────────────────────────
 
     async def _collector_start(self, session_id: str, config: dict) -> None:

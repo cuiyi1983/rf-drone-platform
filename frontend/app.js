@@ -53,7 +53,7 @@ async function loadDevices() {
   addLog('正在加载设备列表…', 'info');
   elDeviceSelect.innerHTML = '<option value="">加载中…</option>';
   try {
-    const data = await api('GET', '/api/v1/devices');
+    const data = await api('POST', '/api/v1/devices/refresh');
     elDeviceSelect.innerHTML = '<option value="">— 选择设备 —</option>';
     if (data.devices && data.devices.length > 0) {
       data.devices.forEach(d => {

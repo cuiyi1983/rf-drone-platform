@@ -19,11 +19,22 @@ def inject_platform(platform: Any) -> None:
 async def list_devices() -> dict:
     """
     GET /api/v1/devices
-    列出已发现设备
+    列出已发现设备（缓存，启动时不刷新）
     """
     if _platform_ref is None:
         raise HTTPException(status_code=500, detail="Platform not initialized")
     return await _platform_ref.list_devices()
+
+
+@router.post("/refresh")
+async def refresh_devices() -> dict:
+    """
+    POST /api/v1/devices/refresh
+    重新扫描 Collector 设备列表并返回
+    """
+    if _platform_ref is None:
+        raise HTTPException(status_code=500, detail="Platform not initialized")
+    return await _platform_ref.refresh_devices()
 
 
 @router.get("/{device_id}/capabilities")
