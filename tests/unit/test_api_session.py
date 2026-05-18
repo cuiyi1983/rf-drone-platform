@@ -189,6 +189,13 @@ class TestDevicesAPI:
             yield ac
 
     @pytest.mark.asyncio
+    async def test_options_devices_cors_preflight(self, client):
+        """验证 CORS preflight OPTIONS /api/v1/devices 返回 200"""
+        resp = await client.options("/api/v1/devices")
+        assert resp.status_code == 200, f"CORS preflight failed: {resp.status_code} {resp.text}"
+        assert "access-control-allow-origin" in resp.headers
+
+    @pytest.mark.asyncio
     async def test_list_devices(self, client):
         """列出设备"""
         resp = await client.get("/api/v1/devices")
