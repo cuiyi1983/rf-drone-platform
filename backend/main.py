@@ -9,6 +9,10 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.requests import Request
+from starlette.responses import Response, JSONResponse
 
 from .api.components import inject_platform as inject_components
 from .api.devices import inject_platform as inject_devices
@@ -450,6 +454,28 @@ class MockComponent:
 # ── FastAPI App ──────────────────────────────────────────────────────────────
 
 app = FastAPI(title="RF-Drone-Platform Backend", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ── 405 例外处理：OPTIONS 预检请求直接返回 200 ──────────────────────────────
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """拦截 405 并将 OPTIONS 转为 200（支持 CORS 预检）"""
+    if exc.status_code == 405 and request.method == 'OPTIONS':
+        return Response(status_code=200, headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Allow-Credentials': 'true',
+        })
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 platform = Platform()
 
 
