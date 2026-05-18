@@ -219,7 +219,7 @@ class PlutoDevice(IDevice):
         import adi
 
         self._uri = uri
-        self._sdr: adi.Pluto = adi.Pluto(uri)
+        self._sdr: adi.Pluto = adi.Pluto(uri=uri)
         self._frequency = 5_805_000_000
         self._gain = 20.0
         self._buffer_size = 524_288
