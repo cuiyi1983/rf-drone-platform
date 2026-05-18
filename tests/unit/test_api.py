@@ -185,10 +185,19 @@ class TestDevices:
 
 
 # ------------------------------------------------------------------
-# POST /collector/discover
+# GET|POST /collector/discover
 # ------------------------------------------------------------------
 class TestDiscover:
-    def test_discover(self, client):
+    def test_discover_get(self, client):
+        """Platform uses GET to call /collector/discover (v2.4 fix)"""
+        res = client.get("/api/v1/collector/discover")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["code"] == 0
+        assert "capabilities" in data
+
+    def test_discover_post(self, client):
+        """POST also supported for curl/manual testing"""
         res = client.post("/api/v1/collector/discover")
         assert res.status_code == 200
         data = json.loads(res.data)

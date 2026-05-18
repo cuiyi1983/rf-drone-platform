@@ -104,8 +104,10 @@ Response:
         fw_version: "v0.34"
 ```
 
-#### POST /collector/discover
+#### GET|POST /collector/discover
 首次运行时探测设备能力（仅首次/SN变化时执行）
+
+支持 GET 和 POST 两种方法（Platform 用 GET，curl/测试用 POST）
 
 ```yaml
 Response:
