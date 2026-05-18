@@ -214,14 +214,17 @@ class CollectorAPI:
             """
             GET /api/v1/collector/devices
             """
-            logger.info("Collector: 触发扫描，来源=HTTP GET /collector/devices")
+            logger.info("Collector: HTTP GET /api/v1/collector/devices 被调用, mock=%s", self._mock_devices)
             if self._mock_devices:
                 mock_devs = [
                     {"id": "sim:pluto_2.6.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
                     {"id": "sim:pluto_2.10.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
                 ]
+                logger.info("Collector: 返回 mock 设备列表")
                 return {"code": 0, "message": "ok", "devices": mock_devs}, 200
+            logger.info("Collector: 调用 self._collector.get_devices()")
             devs = self._collector.get_devices()
+            logger.info("Collector: get_devices() 返回 %d 个设备: %s", len(devs), devs)
             return {"code": 0, "message": "ok", "devices": devs}, 200
 
         @app.route("/api/v1/collector/discover", methods=["GET", "POST"])
