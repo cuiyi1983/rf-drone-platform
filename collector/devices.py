@@ -227,23 +227,22 @@ class PlutoDevice(IDevice):
     @classmethod
     def discover(cls) -> list[DeviceInfo]:
         import adi
+        import iio
 
         try:
-            ctx = adi.context()
             devices = []
-            for uri in ctx.uri():
+            contexts = iio.scan_contexts()
+            for uri in contexts:
                 try:
-                    sdr = adi.Pluto(uri)
-                    fw = getattr(sdr, "fw_version", "unknown")
-                    SN = getattr(sdr, "serial", None)
+                    sdr = adi.Pluto(uri=uri)
                     devices.append(
                         DeviceInfo(
                             id=uri,
                             type="pluto",
                             name="ADALM PLUTO",
                             connected=True,
-                            fw_version=fw,
-                            serial=SN,
+                            fw_version=getattr(sdr, "fw_version", "unknown"),
+                            serial=getattr(sdr, "serial", None),
                         )
                     )
                 except Exception:
