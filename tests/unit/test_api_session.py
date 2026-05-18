@@ -218,8 +218,13 @@ class TestDevicesAPI:
         resp = await client.get("/api/v1/devices/nonexistent/capabilities")
         assert resp.status_code == 404
 
-
-class TestSimulatorAPI:
+    @pytest.mark.asyncio
+    async def test_refresh_devices(self, client):
+        """刷新设备列表：重新调用 Collector 扫描"""
+        resp = await client.post("/api/v1/devices/refresh")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "devices" in data
     """Simulator API 测试"""
 
     @pytest.fixture
@@ -228,6 +233,20 @@ class TestSimulatorAPI:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             yield ac
+
+    @pytest.mark.asyncio
+    async def test_options_session_start_cors_preflight(self, client):
+        """CORS preflight: OPTIONS /api/v1/session/start 返回 200"""
+        resp = await client.options("/api/v1/session/start")
+        assert resp.status_code == 200, f"CORS preflight failed: {resp.status_code}"
+        assert "access-control-allow-origin" in resp.headers
+
+    @pytest.mark.asyncio
+    async def test_health(self, client):
+        """健康检查"""
+        resp = await client.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
 
     @pytest.mark.asyncio
     async def test_simulator_metadata(self, client):

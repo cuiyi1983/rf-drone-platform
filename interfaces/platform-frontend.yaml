@@ -304,6 +304,23 @@ GET /api/v1/devices
 
 ---
 
+#### 刷新设备列表
+
+```
+POST /api/v1/devices/refresh
+```
+
+重新扫描 Collector 设备列表（清缓存后重新 discover）。点击前端「刷新设备」按钮时调用。
+
+**Response (200):**
+
+```yaml
+{
+  "devices": [...}   # 同 GET /api/v1/devices
+```
+
+---
+
 #### 获取设备能力（统一格式）
 
 ```
