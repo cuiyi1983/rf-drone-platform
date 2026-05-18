@@ -32,7 +32,7 @@ from backend.main import app, platform
 def collector_process():
     """启动真实 Collector 进程（--mock-devices 模式），测试结束后关闭"""
     proc = subprocess.Popen(
-        [sys.executable, "-m", "collector.api", "--mock-devices", "--port", "8081"],
+        [sys.executable, "-m", "collector.api", "--mock-devices", "--port", "5101"],
         cwd=os.path.join(os.path.dirname(__file__), "../.."),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -111,7 +111,7 @@ class TestPlatformFlow:
         sio.on("connect", lambda: setattr(sio, "_connected", True))
         try:
             await asyncio.wait_for(
-                sio.connect("http://localhost:8080", transports=["polling"]),
+                sio.connect("http://localhost:5100", transports=["polling"]),
                 timeout=5.0
             )
         except (asyncio.TimeoutError, Exception):

@@ -27,7 +27,7 @@ class Platform:
     负责会话管理、组件管理、设备管理、配置合并
     """
 
-    def __init__(self, collector_base_url: str = "http://localhost:8081"):
+    def __init__(self, collector_base_url: str = "http://localhost:5101"):
         self._collector_base_url = collector_base_url
 
         # 子模块

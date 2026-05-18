@@ -34,7 +34,7 @@ class SocketIOServer:
         io_server.stop()
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8081):
+    def __init__(self, host: str = "0.0.0.0", port: int = 5101):
         self.host = host
         self.port = port
         self._server = None
@@ -196,7 +196,7 @@ _io_server_instance: Optional[SocketIOServer] = None
 _io_lock = threading.Lock()
 
 
-def get_socketio_server(host: str = "0.0.0.0", port: int = 8081) -> SocketIOServer:
+def get_socketio_server(host: str = "0.0.0.0", port: int = 5101) -> SocketIOServer:
     """Get or create the singleton SocketIOServer."""
     global _io_server_instance
     with _io_lock:

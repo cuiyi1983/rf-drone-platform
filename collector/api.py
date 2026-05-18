@@ -165,7 +165,7 @@ class CollectorAPI:
             )
 
             try:
-                self._start_socketio_once("0.0.0.0", 8081)
+                self._start_socketio_once("0.0.0.0", 5101)
                 session_id = self._collector.start(mode=mode, config=config)
                 return _json(0, "采集已开始", session_id=session_id)
             except RuntimeError as e:
@@ -300,7 +300,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Collector Service")
     parser.add_argument("--mock-devices", action="store_true", help="使用模拟 Pluto 设备（用于测试）")
-    parser.add_argument("--port", type=int, default=8081, help="HTTP 端口（默认 8081）")
+    parser.add_argument("--port", type=int, default=5101, help="HTTP 端口（默认 5101）")
     args = parser.parse_args()
 
     app = create_app(mock_devices=args.mock_devices)

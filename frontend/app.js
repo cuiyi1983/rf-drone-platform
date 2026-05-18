@@ -2,7 +2,7 @@
 // app.js — RF Drone Platform Web UI
 // ================================================================
 
-const API_BASE = 'http://localhost:8080';
+const API_BASE = 'http://localhost:5100';
 
 // ---- State -------------------------------------------------------
 let currentSessionId = null;
