@@ -224,9 +224,10 @@ class CollectorAPI:
             devs = self._collector.get_devices()
             return {"code": 0, "message": "ok", "devices": devs}, 200
 
-        @app.route("/api/v1/collector/discover", methods=["POST"])
+        @app.route("/api/v1/collector/discover", methods=["GET", "POST"])
         def discover_capabilities():
             """
+            GET /api/v1/collector/discover
             POST /api/v1/collector/discover
             """
             caps = self._collector.get_capabilities()
