@@ -195,9 +195,15 @@ class Platform:
         self._inference_history[session_id] = []
 
         # 启动采集（通知 Collector）
-        await self._collector_start(session_id, merged_config)
+        conn_result = await self._collector_start(session_id, merged_config)
 
-        return {"session_id": session_id, "status": "running", "warnings": warnings}
+        return {
+            "session_id": session_id,
+            "status": "running",
+            "warnings": warnings,
+            "collector_connection": conn_result["status"],
+            **({"collector_error": conn_result["detail"]} if conn_result["status"] == "failed" else {})
+        }
 
     async def stop_session(self, session_id: str) -> dict:
         """停止会话"""
@@ -231,7 +237,14 @@ class Platform:
         if session_id:
             if session_id not in self._sessions:
                 return {"error": "会话不存在", "code": 1003}
-            return self._sessions[session_id].copy()
+            session = self._sessions[session_id].copy()
+            # 补充组件名称和版本
+            component_id = session.get("component_id")
+            if component_id and component_id in self._components:
+                comp = self._components[component_id]
+                session["component_name"] = comp.get("name", "")
+                session["component_version"] = comp.get("version", "")
+            return session
         else:
             return {"sessions": [s.copy() for s in self._sessions.values()]}
 
@@ -314,15 +327,21 @@ class Platform:
 
     # ── Collector 通信 ───────────────────────────────────────────
 
-    async def _collector_start(self, session_id: str, config: dict) -> None:
-        """通知 Collector 开始采集"""
+    async def _collector_start(self, session_id: str, config: dict) -> dict:
+        """通知 Collector 开始采集，返回连接结果"""
         try:
-            await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/start", json={
+            resp = await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/start", json={
                 "session_id": session_id,
                 "config": config
             }, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("code") == 0:
+                    return {"status": "success"}
+                return {"status": "failed", "detail": data.get("message", "Unknown error")}
+            return {"status": "failed", "detail": f"HTTP {resp.status_code}: {resp.text[:100]}"}
         except Exception as e:
-            logger.warning(f"Collector start failed: {e}")
+            return {"status": "failed", "detail": f"{type(e).__name__}: {e}"}
 
     async def _collector_stop(self, session_id: str) -> None:
         """通知 Collector 停止采集"""
