@@ -13,6 +13,8 @@ import random
 import time
 from typing import Any
 
+import numpy as np
+
 from backend.inference.framework import IInferenceComponent
 
 
@@ -154,7 +156,19 @@ class SimComponent(IInferenceComponent):
         if delay_ms > 0:
             time.sleep(delay_ms / 1000.0)
 
-        # 决定是否有检测
+        # ── 真实参数（从 iq_frame 读取）───────────────────────────────
+        center_freq = iq_frame.get("center_freq", 5_805_000_000)
+        sample_rate = iq_frame.get("sample_rate", 60_000_000)
+
+        # 计算真实功率：RMS 功率 → dBm
+        iq_data = iq_frame.get("iq_data", np.array([]))
+        if hasattr(iq_data, "size") and iq_data.size > 0:
+            power_w = np.mean(np.abs(iq_data) ** 2)
+            power_dbm = round(10.0 * np.log10(power_w + 1e-12), 1)
+        else:
+            power_dbm = round(random.uniform(-50.0, -30.0), 1)
+
+        # ── 决定是否有检测 ───────────────────────────────────────────
         if mode == "always_drone":
             has_drone = True
         elif mode == "always_noise":
@@ -166,10 +180,11 @@ class SimComponent(IInferenceComponent):
 
         self._last_result_is_drone = has_drone
 
-        # 构建结果
+        # ── 构建结果 ─────────────────────────────────────────────────
         detections = []
         debug_info = {
-            "inference_time_ms": round(random.uniform(5.0, 20.0), 2),
+            # inference_time_ms 由框架计时（框架设置，不被覆盖）
+            "inference_time_ms": iq_frame.get("inference_time_ms", 0),
             "stft_time_ms": round(random.uniform(1.0, 5.0), 2),
             "total_inference_count": self._infer_count,
             "device": self._device,
@@ -177,18 +192,20 @@ class SimComponent(IInferenceComponent):
 
         if has_drone:
             confidence = round(random.uniform(threshold + 0.01, 0.995), 3)
+            # 使用真实的 center_freq / 1e6 MHz 值
+            freq_mhz = round(center_freq / 1e6, 3)
             detections.append({
                 "model": random.choice(models),
                 "confidence": confidence,
-                "frequency": random.choice(_FREQ_LIST),
-                "power_dbm": round(random.uniform(-50.0, -30.0), 1),
+                "frequency": freq_mhz,
+                "power_dbm": power_dbm,
             })
 
         return {
             "frame_id": iq_frame.get("frame_id", 0),
             "timestamp": iq_frame.get("timestamp", time.time()),
-            "center_freq": iq_frame.get("center_freq", 5_805_000_000),
-            "sample_rate": iq_frame.get("sample_rate", 60_000_000),
+            "center_freq": center_freq,
+            "sample_rate": sample_rate,
             "detections": detections,
             "debug": debug_info,
         }
