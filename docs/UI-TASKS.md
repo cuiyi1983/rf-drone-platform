@@ -1,7 +1,7 @@
-# UI 重构 — 观测页面 & 配置页面
+# UI 重构 — 观测页面 & 配置页面 + 后台任务清单
 
 > 来源：与崔老板讨论（2026-05-19）
-> 目标：参考 detector 仓 UI，重构 platform 仓前端观测+配置两个页面
+> 目标：参考 detector 仓 UI，重构 platform 仓前端 + 补全后台接口
 
 ---
 
@@ -81,10 +81,36 @@
 
 ---
 
+## 三、后台接口任务清单
+
+### 3.1 Collector 模块（归小采采）
+
+| # | 任务 | 说明 | 影响接口 |
+|---|---|---|---|
+| C-1 | 新增设备连接接口 | 支持设备 URI 选择，在 start 前先建立连接 | `POST /collector/connect`（新增） |
+| C-2 | start 接口改造 | 仅负责启动采集，设备未连接时自动连接 | `POST /collector/start`（修改） |
+| C-3 | disconnect 接口 | 断开设备连接 | `POST /collector/disconnect`（新增） |
+
+### 3.2 Platform Backend 模块（主 Agent）
+
+| # | 任务 | 说明 | 影响接口 |
+|---|---|---|---|
+| P-1 | 会话状态返回模型信息 | `GET /api/v1/session/status` 增加当前组件名称/版本 | 修改现有接口 |
+| P-2 | 新增当前配置查询接口 | 返回当前会话的推理组件配置 + 采集器配置 | `GET /api/v1/session/{id}/config`（新增） |
+| P-3 | 连接结果返回 | collector connect 接口结果透传至前端 | 修改 session start 响应 |
+| P-4 | Socket.IO 事件规范补充 | 规范 inference_result 字段，前端动态解析表头 | 协议文档 |
+
+### 3.3 模拟推理组件（归主 Agent）
+
+| # | 任务 | 说明 |
+|---|---|---|
+| M-1 | 实现模拟推理组件 | `backend/components/mock_component.py`，实现 `IInferenceComponent` 接口，推理过程跳过，随机输出结果，与真实组件无区别 |
+
 ---
 
-## 三、任务清单
+## 四、任务汇总
 
+### 前端（UI 重构）
 - [ ] 观测页面：顶部 statusbar（Pluto状态 + 模型状况，去 socket）
 - [ ] 观测页面：实时推理统计表（动态列，最近10条）
 - [ ] 观测页面：去除检测结果面板 + 推理历史
@@ -98,9 +124,21 @@
 - [ ] 配置页面：参数值优先回填模型推荐配置，无则用 collector 默认值
 - [ ] 全局：统一风格（参考 detector 深色主题）
 
+### Collector（归小采采）
+- [ ] C-1：新增 `POST /collector/connect` 设备连接接口
+- [ ] C-2：改造 `POST /collector/start` 支持设备未连接场景
+- [ ] C-3：新增 `POST /collector/disconnect` 断开设备接口
+
+### Platform Backend（归主 Agent）
+- [ ] P-1：会话状态返回组件名称/版本
+- [ ] P-2：新增 `GET /api/v1/session/{id}/config` 当前配置查询
+- [ ] P-3：session start 返回连接结果
+- [ ] P-4：Socket.IO inference_result 字段规范文档
+- [ ] M-1：实现模拟推理组件 `backend/components/mock_component.py`
+
 ---
 
-## 四、参考来源
+## 五、参考来源
 
 - **Detector UI 模板**：`/projects/low-altitude-monitoring/inference/ui/templates/index.html`
 - **Detector UI JS**：`/projects/low-altitude-monitoring/inference/ui/static/js/main.js`
