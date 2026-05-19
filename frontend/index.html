@@ -321,8 +321,8 @@ select.frm{padding:.3rem .5rem}
         <button id="scanBtn" class="btn btn-i"><i class="bi bi-search"></i> 扫描</button>
       </div>
 
-      <!-- 采集器参数（动态加载） -->
-      <div id="collector-params" style="display:none">
+      <!-- 采集器参数（动态加载，始终可见） -->
+      <div id="collector-params">
         <div class="igrid" style="margin-top:.4rem">
           <div class="iit">
             <div class="il">中心频率 (MHz)</div>
@@ -343,25 +343,17 @@ select.frm{padding:.3rem .5rem}
         </div>
       </div>
 
-      <button id="apbtn" class="btn btn-pr w-100" style="margin-top:.8rem;background:var(--acc);color:#fff"><i class="bi bi-check-lg"></i> 连接采集器</button>
+      <div class="row-gap" style="margin-top:.8rem">
+        <button id="connBtn" class="btn btn-i" style="flex:1"><i class="bi bi-plug"></i> 连接采集器</button>
+        <button id="apbtn" class="btn btn-pr" style="flex:1;background:var(--acc2);color:#0f0f23"><i class="bi bi-check-lg"></i> 应用配置</button>
+      </div>
       <div id="aps" class="aps" style="margin-top:.4rem"></div>
     </div>
   </div>
 
 </div><!-- /cplay -->
 
-<!-- 调试信息 -->
-<div class="card mt-3" style="max-width:960px">
-  <div class="chdr"><i class="bi bi-info-circle"></i> 调试信息</div>
-  <div class="cbd">
-    <div class="igrid">
-      <div class="iit"><div class="il">推理次数</div><div class="iv" id="ds-inf-count">0</div></div>
-      <div class="iit"><div class="il">处理耗时</div><div class="iv" id="ds-inf-time">0 ms</div></div>
-      <div class="iit"><div class="il">输入Shape</div><div class="iv" id="ds-inf-in">--</div></div>
-      <div class="iit"><div class="il">输出Shape</div><div class="iv" id="ds-inf-out">--</div></div>
-    </div>
-  </div>
-</div>
+
 </div><!-- /pg-cfg -->
 
 </div><!-- /container-fluid -->

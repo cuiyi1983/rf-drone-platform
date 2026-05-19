@@ -318,19 +318,43 @@ async function loadComponentSchema(componentId) {
   }
 }
 
+// ---- Transform JSON Schema (platform format) to app.js expected format ---
+function transformSchema(configSchema) {
+  if (!configSchema) return { parameters: {}, defaults: {} };
+  const parameters = {};
+  const defaults = {};
+  for (const [key, prop] of Object.entries(configSchema)) {
+    parameters[key] = {
+      label: prop.title || key,
+      type: prop.type === 'number' ? 'number' : (prop.type === 'boolean' ? 'boolean' : 'text'),
+      minimum: prop.minimum,
+      maximum: prop.maximum,
+      step: prop.multipleOf || (prop.type === 'number' ? 'any' : undefined),
+    };
+    if (prop.default !== undefined) defaults[key] = prop.default;
+    // Select for enum fields
+    if (prop.enum) {
+      parameters[key].type = 'select';
+      parameters[key].options = prop.enum.map(v => ({ value: v, label: String(v) }));
+    }
+  }
+  return { parameters, defaults };
+}
+
 function renderSchemaParams(schema) {
   const container = $('schema-params');
-  if (!schema || !schema.parameters || Object.keys(schema.parameters).length === 0) {
+  const transformed = transformSchema(schema);
+  const params = transformed.parameters;
+  const defaults = transformed.defaults;
+
+  if (!params || Object.keys(params).length === 0) {
     container.style.display = 'none';
     return;
   }
   container.style.display = 'grid';
-
-  // Fill defaults
-  const defaults = schema.defaults || {};
-
   container.innerHTML = '';
-  Object.entries(schema.parameters).forEach(([key, param]) => {
+
+  Object.entries(params).forEach(([key, param]) => {
     const item = document.createElement('div');
     item.className = 'param-item';
 
@@ -350,15 +374,21 @@ function renderSchemaParams(schema) {
       });
       if (defaults[key] !== undefined) sel.value = defaults[key];
       item.appendChild(sel);
+    } else if (param.type === 'boolean') {
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.id = 'sp_' + key;
+      if (defaults[key] !== undefined) chk.checked = defaults[key];
+      item.appendChild(chk);
     } else {
       const input = document.createElement('input');
-      input.type = param.type === 'number' ? 'number' : 'text';
+      input.type = 'number';
       input.className = 'frm inp';
       input.id = 'sp_' + key;
       if (defaults[key] !== undefined) input.value = defaults[key];
-      if (param.min !== undefined) input.min = param.min;
-      if (param.max !== undefined) input.max = param.max;
-      if (param.step !== undefined) input.step = param.step;
+      if (param.minimum !== undefined) input.min = param.minimum;
+      if (param.maximum !== undefined) input.max = param.maximum;
+      if (param.step && param.step !== 'any') input.step = param.step;
       item.appendChild(input);
     }
 
@@ -519,30 +549,61 @@ async function scanDevices() {
 // ---- Load device capabilities and init form ----------------------
 async function loadDeviceCapabilities(deviceId) {
   if (!deviceId) return;
-
   try {
-    const data = await api('GET', '/api/v1/devices/' + deviceId + '/capabilities');
-    // Populate form with defaults from collector
-    const cp = $('collector-params');
-    if (cp) cp.style.display = 'block';
-
-    // Try to pre-fill from model recommendation
+    // Pre-fill form with values from currently loaded model's collector config
+    // (model recommends values before collector is connected)
     if (S.session_config && S.session_config.collector_config) {
       const cc = S.session_config.collector_config;
-      if (cc.center_freq_hz) $('cf').value = (cc.center_freq_hz / 1e6).toFixed(1);
-      if (cc.sample_rate_hz) $('sr').value = (cc.sample_rate_hz / 1e6).toFixed(0);
-      if (cc.gain_db) $('gain').value = cc.gain_db;
-      if (cc.bandwidth_hz) $('bw').value = (cc.bandwidth_hz / 1e6).toFixed(0);
+      if (cc.frequency) $('cf').value = (cc.frequency / 1e6).toFixed(1);
+      if (cc.sample_rate) $('sr').value = (cc.sample_rate / 1e6).toFixed(0);
+      if (cc.gain) $('gain').value = cc.gain;
+      if (cc.buffer_size) $('bw').value = (cc.buffer_size / 1e6).toFixed(0);
     }
-
-    log('已加载设备能力');
+    log('设备参数已预填');
   } catch (e) {
     log('加载设备能力失败: ' + e.message);
   }
 }
 
-// ---- Apply collector config (connect to device) ------------------
-async function applyCollectorConfig() {
+// ---- Apply collector params (apply config to collector) --------
+async function applyCollectorParams() {
+  const deviceId = $('deviceSel').value;
+  if (!deviceId) {
+    const aps = $('aps');
+    if (aps) aps.innerHTML = '<span class="err"><i class="bi bi-x-circle"></i> 请先连接采集器</span>';
+    setTimeout(() => { if (aps) aps.innerHTML = ''; }, 3000);
+    return;
+  }
+  const aps = $('aps');
+  if (aps) aps.innerHTML = '<span style="color:var(--mut)">应用配置中…</span>';
+  try {
+    const payload = {
+      frequency: parseFloat($('cf')?.value || 5805) * 1e6,
+      sample_rate: parseFloat($('sr')?.value || 60) * 1e6,
+      gain: parseFloat($('gain')?.value || 20),
+      buffer_size: 524288,
+    };
+    await api('POST', '/api/v1/collector/apply_component_config', {
+      source: 'ui',
+      component_id: 'sim-inference',
+      requirements: {},
+      config: payload,
+    });
+    if (aps) aps.innerHTML = '<span class="ok"><i class="bi bi-check-circle"></i> 配置已应用</span>';
+    log('采集器参数已应用: ' + JSON.stringify(payload));
+    // Save to session config
+    if (!S.session_config) S.session_config = {};
+    S.session_config.collector_config = { ...S.session_config.collector_config, ...payload };
+    updateConfigDisplay(S.session_config);
+  } catch (e) {
+    if (aps) aps.innerHTML = '<span class="err"><i class="bi bi-x-circle"></i> ' + e.message + '</span>';
+    log('应用配置失败: ' + e.message);
+  }
+  setTimeout(() => { if (aps) aps.innerHTML = ''; }, 3000);
+}
+
+// ---- Connect collector ----------------------------------------------
+async function connectCollector() {
   const deviceId = $('deviceSel').value;
   if (!deviceId) {
     const aps = $('aps');
@@ -550,37 +611,21 @@ async function applyCollectorConfig() {
     setTimeout(() => { if (aps) aps.innerHTML = ''; }, 3000);
     return;
   }
-
   const aps = $('aps');
   if (aps) aps.innerHTML = '<span style="color:var(--mut)">正在连接…</span>';
-
   try {
-    const payload = {
-      uri: deviceId,
-      center_freq_hz: parseFloat($('cf')?.value || 5805) * 1e6,
-      sample_rate_hz: parseFloat($('sr')?.value || 60) * 1e6,
-      gain_db: parseFloat($('gain')?.value || 20),
-      bandwidth_hz: parseFloat($('bw')?.value || 56) * 1e6,
-    };
-
-    await api('POST', '/api/v1/devices/' + deviceId + '/connect', payload);
-
+    await api('POST', '/api/v1/collector/connect', { device_uri: deviceId });
     if (aps) aps.innerHTML = '<span class="ok"><i class="bi bi-check-circle"></i> 连接成功</span>';
     log('采集器已连接: ' + deviceId);
-
-    // Update session config
-    if (!S.session_config) S.session_config = {};
-    S.session_config.collector_config = payload;
-    updateConfigDisplay(S.session_config);
-
     updateStatusDot('ok', '采集器已就绪');
     $('crt').textContent = deviceId;
-
+    // Show collector params after connecting
+    const cp = $('collector-params');
+    if (cp) cp.style.display = 'block';
   } catch (e) {
     if (aps) aps.innerHTML = '<span class="err"><i class="bi bi-x-circle"></i> ' + e.message + '</span>';
     log('连接失败: ' + e.message);
   }
-
   setTimeout(() => { if (aps) aps.innerHTML = ''; }, 3000);
 }
 
@@ -610,10 +655,11 @@ function bind() {
   $('mlbtn').addEventListener('click', () => {
     const val = $('msel').value;
     if (!val) { log('请先选择组件'); return; }
-    loadComponentSchema(val).then(() => {
-      // Auto-start session after loading component
-      startSession();
-    });
+    loadComponentSchema(val);
+    // 显示已加载提示
+    const applied = $('cfg-applied');
+    if (applied) applied.innerHTML = '<span class="ok">组件已加载，参数已呈现，请在观测页启动采数</span>';
+    setTimeout(() => { if (applied) applied.innerHTML = ''; }, 4000);
   });
 
   // Device select
@@ -624,8 +670,9 @@ function bind() {
   // Scan devices
   $('scanBtn').addEventListener('click', scanDevices);
 
-  // Apply collector config
-  $('apbtn').addEventListener('click', applyCollectorConfig);
+  // Apply collector config (connect + apply params)
+  $('connBtn').addEventListener('click', connectCollector);
+  $('apbtn').addEventListener('click', applyCollectorParams);
 
   // Control buttons
   $('btnS').addEventListener('click', startSession);
