@@ -36,6 +36,7 @@ class CollectorConfig:
     buffer_size: int = 524_288
     gain: float = 20.0
     hop_interval_ms: int = 100
+    iq_file_path: Optional[str] = None  # IQ file path (for repeater mode)
 
 
 @dataclass
@@ -248,6 +249,13 @@ class Collector:
         if mode == "simulator":
             self._simulator = IQSimulator()
             self._device = None
+            iq_file = config.iq_file_path if hasattr(config, 'iq_file_path') else None
+            if iq_file:
+                try:
+                    self._simulator.load(iq_file)
+                    logger.info(f"Collector: IQ file pre-loaded from config: {iq_file}")
+                except Exception as e:
+                    logger.warning(f"IQ file pre-load failed (may already be loaded by API): {e}")
             logger.info("Collector session %s started in SIMULATOR mode", self._session_id)
         else:
             # mode == "pluto"

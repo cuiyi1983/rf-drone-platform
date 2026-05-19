@@ -172,7 +172,7 @@ class CollectorAPI:
             """
             body = request.get_json(force=True) or {}
             mode = body.get("mode", "pluto")
-            if mode not in ("pluto", "simulator"):
+            if mode not in ("pluto", "simulator", "repeater"):
                 return _json(400, f"Invalid mode: {mode}")
 
             raw_config = body.get("config", {})
@@ -181,6 +181,8 @@ class CollectorAPI:
             frequencies = [int(f) for f in raw_freqs]
             # C-2: support device_uri from config for auto-connect-on-start
             device_uri = raw_config.get("device_uri") or None
+            # Support iq_file_path for repeater mode
+            iq_file_path = raw_config.get("iq_file_path") or None
 
             config = CollectorConfig(
                 device_uri=device_uri,
@@ -189,11 +191,25 @@ class CollectorAPI:
                 buffer_size=int(raw_config.get("buffer_size", 524_288)),
                 gain=float(raw_config.get("gain", 20.0)),
                 hop_interval_ms=int(raw_config.get("hop_interval_ms", 100)),
+                iq_file_path=iq_file_path,
             )
+
+            # If mode is "repeater", treat as simulator internally and pre-load the IQ file
+            actual_mode = mode
+            if mode == "repeater":
+                if not iq_file_path:
+                    return _json(400, "iq_file_path required for repeater mode")
+                try:
+                    self._simulator.load(iq_file_path)
+                    logger.info(f"Collector: IQ file loaded for repeater mode: {iq_file_path}")
+                except Exception as e:
+                    logger.error(f"IQ file load failed: {e}")
+                    return _json(400, f"IQ file load failed: {e}")
+                actual_mode = "simulator"
 
             try:
                 self._start_socketio_once("0.0.0.0", 5101)
-                session_id = self._collector.start(mode=mode, config=config)
+                session_id = self._collector.start(mode=actual_mode, config=config)
                 return _json(0, "采集已开始", session_id=session_id)
             except RuntimeError as e:
                 logger.error("start failed: %s", e)
@@ -246,6 +262,7 @@ class CollectorAPI:
                 mock_devs = [
                     {"id": "sim:pluto_2.6.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
                     {"id": "sim:pluto_2.10.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
+                    {"id": "file:iq_recording.bin", "type": "pluto-repeater", "name": "Pluto-Repayer (IQ File)", "connected": True, "fw_version": "v0.34", "capabilities": {"iq_file_supported": True, "default_iq_dir": "/repo/IQ-Record"}},
                 ]
                 logger.info("Collector: 返回 mock 设备列表")
                 return {"code": 0, "message": "ok", "devices": mock_devs}, 200

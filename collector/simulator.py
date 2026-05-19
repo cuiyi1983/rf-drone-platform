@@ -71,13 +71,16 @@ class IQSimulator:
         total_samples = self._data.shape[0]
         self._pos = 0
 
-        # Infer sample rate from config file if available alongside the .npy
-        config_path = path.with_suffix(".npy.config")
+        # Infer sample rate and center frequency from config file if available
+        config_path = path.with_suffix("").parent / (path.stem + ".config")
+        if not config_path.exists():
+            config_path = path.with_suffix(".config")
         if config_path.exists():
             try:
                 import json
                 cfg = json.loads(config_path.read_text())
                 self._sample_rate = cfg.get("sample_rate", 60e6)
+                self._metadata.center_freq = cfg.get("center_freq")
             except Exception:
                 pass
 
