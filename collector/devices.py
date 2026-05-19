@@ -295,7 +295,7 @@ class PlutoDevice(IDevice):
 
         if num_samples is None:
             num_samples = self._buffer_size
-        raw = self._sdr.rx(num_samples)
+        raw = self._sdr.rx()
         # Convert complex to interleaved float32 bytes
         iq = np.empty(raw.nbytes, dtype=np.float32)
         iq[0::2] = raw.real.astype(np.float32)
