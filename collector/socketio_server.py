@@ -98,7 +98,7 @@ class SocketIOServer:
             "frame": frame_dict,
         }
         try:
-            self._emit_via_socketio(session_id, event)
+            self._emit_via_socketio(f"session:{session_id}", event)
         except Exception as e:
             logger.debug("emit_frame skipped (no clients): %s", e)
 
@@ -108,7 +108,7 @@ class SocketIOServer:
             return
         event = {"type": "collector_stats", "session_id": session_id, "stats": stats}
         try:
-            self._emit_via_socketio(session_id, event)
+            self._emit_via_socketio(f"session:{session_id}", event)
         except Exception as e:
             logger.debug("emit_stats skipped: %s", e)
 
@@ -118,7 +118,7 @@ class SocketIOServer:
             return
         event = {"type": "error", "session_id": session_id, "message": error_msg}
         try:
-            self._emit_via_socketio(session_id, event)
+            self._emit_via_socketio(f"session:{session_id}", event)
         except Exception:
             pass
 
@@ -147,6 +147,22 @@ class SocketIOServer:
         @sio.on("disconnect", namespace="/")
         def on_disconnect(sid):
             logger.info("Client disconnected: sid=%s", sid)
+
+        @sio.on("subscribe", namespace="/")
+        def on_subscribe(sid, data):
+            session_id = (data or {}).get("session_id")
+            if session_id:
+                sio.enter_room(sid, f"session:{session_id}")
+                logger.info("Client %s joined room session:%s", sid, session_id)
+            return {"success": True}
+
+        @sio.on("unsubscribe", namespace="/")
+        def on_unsubscribe(sid, data):
+            session_id = (data or {}).get("session_id")
+            if session_id:
+                sio.leave_room(sid, f"session:{session_id}")
+                logger.info("Client %s left room session:%s", sid, session_id)
+            return {"success": True}
 
         self._server = sio  # only assign once – sio is the properly-configured instance above
 
