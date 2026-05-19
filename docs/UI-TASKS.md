@@ -104,7 +104,7 @@
 
 | # | 任务 | 说明 |
 |---|---|---|
-| M-1 | 实现模拟推理组件 | `backend/components/mock_component.py`，实现 `IInferenceComponent` 接口，推理过程跳过，随机输出结果，与真实组件无区别 |
+| M-1 | 实现模拟推理组件 `backend/components/sim_component.py`，实现 `IInferenceComponent` 接口，推理过程跳过，随机输出结果，与真实组件对平台完全透明，平台统一使用 SimComponent（不再区分） | ✅ 完成（commit 72b9ee6） |
 
 ---
 
@@ -134,7 +134,7 @@
 - [ ] P-2：新增 `GET /api/v1/session/{id}/config` 当前配置查询
 - [ ] P-3：session start 返回连接结果
 - [ ] P-4：Socket.IO inference_result 字段规范文档
-- [ ] M-1：实现模拟推理组件 `backend/components/mock_component.py`
+- [ ] M-1：实现模拟推理组件 `backend/components/sim_component.py`（✅ 完成）
 
 ---
 
