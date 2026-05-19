@@ -37,7 +37,7 @@ class TestSessionAPI:
     async def test_start_session(self, client):
         """启动会话"""
         resp = await client.post("/api/v1/session/start", json={
-            "component_id": "rfuav-two-stage",
+            "component_id": "sim-inference",
             "config": {"confidence_threshold": 0.5}
         })
         assert resp.status_code == 200
@@ -64,7 +64,7 @@ class TestSessionAPI:
         """停止会话"""
         # 先启动
         start_resp = await client.post("/api/v1/session/start", json={
-            "component_id": "rfuav-two-stage"
+            "component_id": "sim-inference"
         })
         session_id = start_resp.json()["session_id"]
 
@@ -97,7 +97,7 @@ class TestSessionAPI:
         """查询单个会话"""
         # 启动
         start_resp = await client.post("/api/v1/session/start", json={
-            "component_id": "rfuav-two-stage"
+            "component_id": "sim-inference"
         })
         session_id = start_resp.json()["session_id"]
 
@@ -119,7 +119,7 @@ class TestSessionAPI:
         """更新会话配置"""
         # 启动
         start_resp = await client.post("/api/v1/session/start", json={
-            "component_id": "rfuav-two-stage"
+            "component_id": "sim-inference"
         })
         session_id = start_resp.json()["session_id"]
 
@@ -156,10 +156,10 @@ class TestComponentsAPI:
     @pytest.mark.asyncio
     async def test_get_component_detail(self, client):
         """获取组件详情"""
-        resp = await client.get("/api/v1/components/rfuav-two-stage")
+        resp = await client.get("/api/v1/components/sim-inference")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["id"] == "rfuav-two-stage"
+        assert data["id"] == "sim-inference"
         assert "collector_requirements" in data
 
     @pytest.mark.asyncio
@@ -171,7 +171,7 @@ class TestComponentsAPI:
     @pytest.mark.asyncio
     async def test_get_component_config_schema(self, client):
         """获取配置 Schema"""
-        resp = await client.get("/api/v1/components/rfuav-two-stage/config-schema")
+        resp = await client.get("/api/v1/components/sim-inference/config-schema")
         assert resp.status_code == 200
         data = resp.json()
         assert "config_schema" in data

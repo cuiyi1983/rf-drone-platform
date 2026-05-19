@@ -94,7 +94,7 @@ class TestPlatformFlow:
     async def test_2_start_session(self, platform_initialized, client):
         """场景2：启动会话（模拟前端点击"启动采集"）"""
         resp = await client.post("/api/v1/session/start", json={
-            "component_id": "rfuav-two-stage",
+            "component_id": "sim-inference",
             "config": {"confidence_threshold": 0.7}
         })
         assert resp.status_code == 200, f"响应体: {resp.text}"
@@ -124,7 +124,7 @@ class TestPlatformFlow:
     async def test_4_query_session_status(self, platform_initialized, client):
         """场景4：查询会话状态"""
         start_resp = await client.post("/api/v1/session/start", json={
-            "component_id": "rfuav-two-stage",
+            "component_id": "sim-inference",
             "config": {}
         })
         assert start_resp.status_code == 200
@@ -140,7 +140,7 @@ class TestPlatformFlow:
     async def test_5_stop_session(self, platform_initialized, client):
         """场景5：停止会话（模拟前端点击"停止采集"）"""
         start_resp = await client.post("/api/v1/session/start", json={
-            "component_id": "rfuav-two-stage",
+            "component_id": "sim-inference",
             "config": {}
         })
         assert start_resp.status_code == 200
@@ -163,7 +163,7 @@ class TestPlatformFlowRepeatable:
         """连续两次 start + stop，验证第二次不受第一次影响"""
         for i in range(2):
             start_resp = await client.post("/api/v1/session/start", json={
-                "component_id": "rfuav-two-stage",
+                "component_id": "sim-inference",
                 "config": {"confidence_threshold": 0.5}
             })
             assert start_resp.status_code == 200, f"[run {i}] start 失败: {start_resp.text}"

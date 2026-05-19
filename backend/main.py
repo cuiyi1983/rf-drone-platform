@@ -169,13 +169,10 @@ class Platform:
             error_callback=lambda err: self._on_error(session_id, err)
         )
 
-        # 使用组件实例（内置 SimComponent 或真实 .zip 组件）
-        if component_id == "sim-inference":
-            from backend.components.sim_component import SimComponent
-            component_instance = SimComponent()
-        else:
-            # TODO: 真实组件从 .zip 包加载，临时沿用 SimComponent 做占位
-            component_instance = MockComponent(component)
+        # 组件实例：统一加载逻辑，平台不感知是 sim 组件还是真实组件
+        # TODO: 真实组件从 .zip 包加载实现后，此处统一处理
+        from backend.components.sim_component import SimComponent
+        component_instance = SimComponent()
         device = "cpu"  # 实际通过 ONNX Runtime 检测
 
         if not framework.load_component(component_id, component_instance, config, device):
@@ -409,50 +406,6 @@ class Platform:
             return 0
 
 
-class MockComponent:
-    """模拟推理组件（实际从 .zip 加载）"""
-
-    def __init__(self, manifest: dict):
-        self._manifest = manifest
-        self._config = {}
-
-    def initialize(self, config: dict, device: str) -> None:
-        self._config = config
-
-    def infer(self, iq_frame: dict) -> dict:
-        # Mock 推理结果
-        import random
-        frame_id = iq_frame.get("frame_id", 0)
-        timestamp = iq_frame.get("timestamp", 0)
-
-        detections = []
-        if random.random() > 0.7:
-            detections.append({
-                "model": "DJI_MAVIC3_PRO",
-                "confidence": round(random.uniform(0.5, 0.99), 2),
-                "frequency": 5_805_000_000
-            })
-
-        return {
-            "frame_id": frame_id,
-            "timestamp": timestamp,
-            "detections": detections,
-            "debug": {
-                "inference_time_ms": round(random.uniform(5, 20), 2),
-                "stft_time_ms": round(random.uniform(1, 5), 2),
-                "model_time_ms": round(random.uniform(3, 15), 2),
-                "device": "cpu"
-            }
-        }
-
-    def release(self) -> None:
-        pass
-
-    def health_check(self) -> bool:
-        return True
-
-    def get_manifest(self) -> dict:
-        return self._manifest
 
 
 # ── FastAPI App ──────────────────────────────────────────────────────────────
