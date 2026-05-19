@@ -521,11 +521,12 @@ async def shutdown():
 
 
 # 注册路由
-from .api import session, components, devices
+from .api import session, components, devices, collector_proxy
 
 app.include_router(session.router)
 app.include_router(components.router)
 app.include_router(devices.router)
+app.include_router(collector_proxy.router)
 
 # 挂载 Socket.IO
 platform.socketio_server.init_app(app, platform)
