@@ -344,6 +344,21 @@ select.frm{padding:.3rem .5rem}
       </div>
 
       <div class="row-gap" style="margin-top:.8rem">
+
+      <!-- Pluto-Repayer IQ 文件选择（动态显示） -->
+      <div id="repeater-panel" style="display:none; margin-top:.5rem;">
+        <div class="lbl">IQ 文件路径</div>
+        <div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.3rem">
+          <input class="frm inp" id="iqFilePath" placeholder="选择 .bin 或 .npy 文件" style="flex:1" readonly>
+          <!-- 浏览器原生文件选择框（兼容 Windows/Linux）-->
+          <input type="file" id="iqFileInput" accept=".bin,.npy" style="display:none">
+          <button class="btn btn-i" id="browseIQBtn" style="white-space:nowrap">选择文件</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <input class="form-check-input" type="checkbox" id="loopPlay" checked>
+          <label class="form-check-label" for="loopPlay" style="font-size:.75rem;color:var(--mut)">循环播放</label>
+        </div>
+      </div>
         <button id="connBtn" class="btn btn-i" style="flex:1"><i class="bi bi-plug"></i> 连接采集器</button>
         <button id="apbtn" class="btn btn-pr" style="flex:1;background:var(--acc2);color:#0f0f23"><i class="bi bi-check-lg"></i> 应用配置</button>
       </div>

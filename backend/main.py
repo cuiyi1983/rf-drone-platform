@@ -388,8 +388,13 @@ class Platform:
     async def _collector_start(self, session_id: str, config: dict) -> dict:
         """通知 Collector 开始采集，返回连接结果"""
         try:
+            # 如果 config 含 iq_file_path，自动切换为 repeater 模式
+            collector_mode = "pluto"
+            if config.get("iq_file_path"):
+                collector_mode = "repeater"
             resp = await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/start", json={
                 "session_id": session_id,
+                "mode": collector_mode,
                 "config": config
             }, timeout=10)
             if resp.status_code == 200:

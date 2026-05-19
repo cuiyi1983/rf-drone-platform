@@ -421,6 +421,11 @@ function collectSchemaParams() {
     if (input.type === 'number') val = parseFloat(val);
     params[key] = val;
   });
+  // Pluto-Repayer: IQ 文件路径
+  if ($("deviceSel").value && $("deviceSel").value.includes("pluto-repeater")) {
+    const fp = $("iqFilePath");
+    if (fp && fp.value) params.iq_file_path = fp.value;
+  }
   return params;
 }
 
@@ -680,6 +685,9 @@ function bind() {
 
   // Device select
   $('deviceSel').addEventListener('change', () => {
+    const isRepeater = $('deviceSel').value && $('deviceSel').value.includes('pluto-repeater');
+    const rp = $('repeater-panel');
+    if (rp) rp.style.display = isRepeater ? 'block' : 'none';
     loadDeviceCapabilities($('deviceSel').value);
   });
 
@@ -690,10 +698,18 @@ function bind() {
   $('connBtn').addEventListener('click', connectCollector);
   $('apbtn').addEventListener('click', applyCollectorParams);
 
-  // Control buttons
-  $('btnS').addEventListener('click', startSession);
-  $('btnX').addEventListener('click', stopSession);
-}
+  // Pluto-Repayer: 文件选择
+  $('browseIQBtn')?.addEventListener('click', () => {
+    $('iqFileInput')?.click();
+  });
+  $('iqFileInput')?.addEventListener('change', (e) => {
+    const fp = $('iqFilePath');
+    const fi = $('iqFileInput');
+    if (fp && fi?.files?.[0]) {
+      fp.value = fi.files[0].name;
+      fp.title = fi.files[0].path || fi.files[0].name;
+    }
+  });
 
 // ---- Init --------------------------------------------------------
 function init() {
