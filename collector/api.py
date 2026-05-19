@@ -155,8 +155,11 @@ class CollectorAPI:
             # Normalise frequencies – accept ints or float strings
             raw_freqs = raw_config.get("frequencies", [5_805_000_000])
             frequencies = [int(f) for f in raw_freqs]
+            # C-2: support device_uri from config for auto-connect-on-start
+            device_uri = raw_config.get("device_uri") or None
 
             config = CollectorConfig(
+                device_uri=device_uri,
                 frequencies=frequencies,
                 sample_rate=int(raw_config.get("sample_rate", 60_000_000)),
                 buffer_size=int(raw_config.get("buffer_size", 524_288)),
@@ -288,6 +291,39 @@ class CollectorAPI:
         @app.route("/api/v1/collector/health", methods=["GET"])
         def health():
             return {"code": 0, "message": "ok"}, 200
+
+        # ------------------------------------------------------------------
+        # C-1 / C-2 / C-3: device connection management
+        # ------------------------------------------------------------------
+        @app.route("/api/v1/collector/connect", methods=["POST"])
+        def connect_device():
+            """
+            POST /api/v1/collector/connect
+
+            Body: { "device_uri": "usb:2.6.5" }
+            Returns: { code, message, device_info }
+            """
+            body = request.get_json(force=True) or {}
+            device_uri = body.get("device_uri")
+            if not device_uri:
+                return _json(400, "device_uri required")
+
+            try:
+                info = self._collector.connect_device(device_uri)
+                return _json(0, "连接成功", device_info=info)
+            except RuntimeError as e:
+                return _json(500, str(e))
+
+        @app.route("/api/v1/collector/disconnect", methods=["POST"])
+        def disconnect_device():
+            """
+            POST /api/v1/collector/disconnect
+
+            Body: {}
+            Returns: { code, message }
+            """
+            self._collector.disconnect_device()
+            return _json(0, "已断开")
 
 
 # ------------------------------------------------------------------

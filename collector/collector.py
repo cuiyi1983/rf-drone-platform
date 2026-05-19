@@ -111,6 +111,80 @@ class Collector:
         self._device_info: Optional[dict] = None
 
     # ------------------------------------------------------------------
+    # Device connection management
+    # ------------------------------------------------------------------
+    def connect_device(self, uri: str) -> dict:
+        """
+        Connect to a Pluto device by URI.
+
+        Args:
+            uri: Device URI (e.g. "usb:2.6.5")
+
+        Returns:
+            dict with device info {uri, type, name, connected, fw_version, temperature}
+
+        Raises:
+            RuntimeError: if connection fails
+        """
+        if self._device is not None:
+            logger.info("Device already connected: %s", self._device.get_device_info().id)
+            di = self._device.get_device_info()
+            return {
+                "uri": di.id,
+                "type": di.type,
+                "name": di.name,
+                "connected": di.connected,
+                "fw_version": di.fw_version,
+                "temperature": di.temperature,
+            }
+
+        try:
+            self._device = connect_device(uri)
+            self._device_info = {
+                "uri": uri,
+                "connected": True,
+                "temperature": self._device.get_temperature(),
+            }
+            di = self._device.get_device_info()
+            logger.info("Connected to device: %s", uri)
+            return {
+                "uri": di.id,
+                "type": di.type,
+                "name": di.name,
+                "connected": di.connected,
+                "fw_version": di.fw_version,
+                "temperature": di.temperature,
+            }
+        except Exception as e:
+            logger.error("Device connection failed: %s", e)
+            raise RuntimeError(f"连接失败: {e}") from e
+
+    def disconnect_device(self) -> None:
+        """Disconnect the currently connected device."""
+        if self._device is not None:
+            try:
+                self._device.disconnect()
+            except Exception as e:
+                logger.warning("Device disconnect error: %s", e)
+            self._device = None
+            self._device_info = None
+            logger.info("Device disconnected")
+
+    def get_connected_device(self) -> Optional[dict]:
+        """Return info dict for the currently connected device, or None."""
+        if self._device is None:
+            return None
+        di = self._device.get_device_info()
+        return {
+            "uri": di.id,
+            "type": di.type,
+            "name": di.name,
+            "connected": di.connected,
+            "fw_version": di.fw_version,
+            "temperature": di.temperature,
+        }
+
+    # ------------------------------------------------------------------
     # Callbacks
     # ------------------------------------------------------------------
     def on_iq_frame(self, cb: Callable[[IQFrame], None]) -> None:
@@ -177,22 +251,33 @@ class Collector:
             logger.info("Collector session %s started in SIMULATOR mode", self._session_id)
         else:
             # mode == "pluto"
-            if len(config.frequencies) > 0:
-                uri = config.frequencies[0]  # URI encoded as first freq (temporary)
-            else:
-                uri = "usb:2.6.5"
+            # Auto-connect if device not yet connected
+            if self._device is None:
+                if config.device_uri:
+                    uri = config.device_uri
+                elif len(config.frequencies) > 0:
+                    uri = config.frequencies[0]  # URI encoded as first freq (temporary)
+                else:
+                    uri = "usb:2.6.5"
+                try:
+                    self._device = connect_device(uri)
+                except Exception as e:
+                    self._state = CollectorState.ERROR
+                    logger.error("Failed to connect to Pluto: %s", e)
+                    raise RuntimeError(f"Pluto connection failed: {e}") from e
+
             try:
-                self._device = connect_device(uri)
                 self._apply_config(self._device, config)
+                di = self._device.get_device_info()
                 self._device_info = {
-                    "uri": uri,
-                    "connected": True,
+                    "uri": di.id,
+                    "connected": di.connected,
                     "temperature": self._device.get_temperature(),
                 }
             except Exception as e:
                 self._state = CollectorState.ERROR
-                logger.error("Failed to connect to Pluto: %s", e)
-                raise RuntimeError(f"Pluto connection failed: {e}") from e
+                logger.error("Failed to configure Pluto: %s", e)
+                raise RuntimeError(f"Pluto configuration failed: {e}") from e
             logger.info("Collector session %s started in PLUTO mode", self._session_id)
 
         self._thread = threading.Thread(target=self._run_loop, name="collector-loop", daemon=True)
