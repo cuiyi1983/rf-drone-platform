@@ -69,27 +69,11 @@ class SocketIOServer:
         self._sio: Optional[AsyncServer] = None
         self._namespace: Optional[PlatformNamespace] = None
 
-    def init_app(self, app: Any, platform_ref: Any) -> AsyncServer:
-        import socketio
-
-        sio = socketio.AsyncServer(
-            async_mode="asgi",
-            cors_allowed_origins="*",
-            logger=False,
-            engineio_logger=False
-        )
-
-        namespace = PlatformNamespace("/", platform_ref)
-        sio.register_namespace(namespace)
-
-        self._sio = sio
-        self._namespace = namespace
-
-        # 挂载到 ASGI app
-        socketio.ASGIApp(sio, app)
-
-        logger.info("Socket.IO Server 初始化完成")
-        return sio
+    def init_app(self, fastapi_app: Any = None, platform_ref: Any = None) -> None:
+        """
+        保留接口但不做实际挂载（挂载已移至 main.py create_socketio_app）
+        """
+        pass
 
     def emit_inference_result(self, session_id: str, result: dict) -> None:
         """推送推理结果到会话房间"""

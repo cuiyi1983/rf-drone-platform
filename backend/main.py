@@ -529,7 +529,31 @@ app.include_router(devices.router)
 app.include_router(collector_proxy.router)
 
 # 挂载 Socket.IO
-platform.socketio_server.init_app(app, platform)
+def create_socketio_app(fastapi_app: Any) -> Any:
+    """
+    创建 Socket.IO ASGI 应用并挂载到 FastAPI 的 /socket.io 路径。
+    这样 FastAPI 处理所有其他路由（/api/*），Socket.IO 处理 /socket.io/*
+    """
+    import socketio
+    sio = socketio.AsyncServer(
+        async_mode="asgi",
+        cors_allowed_origins="*",
+        logger=False,
+        engineio_logger=False,
+    )
+    namespace = PlatformNamespace("/", platform)
+    sio.register_namespace(namespace)
+    platform.socketio_server._sio = sio
+    platform.socketio_server._namespace = namespace
+
+    # 将 FastAPI 作为 other_asgi_app，非 Socket.IO 流量由 FastAPI 处理
+    sio_app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
+
+    # 挂载到 FastAPI 的 /socket.io 路径
+    fastapi_app.mount('/socket.io', sio_app, name="socketio")
+
+    logger.info("Socket.IO 已挂载到 /socket.io")
+    return sio
 
 
 # ── 健康检查 ────────────────────────────────────────────────────────────────
