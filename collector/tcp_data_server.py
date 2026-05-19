@@ -1,7 +1,7 @@
 """
 tcp_data_server.py - Collector 侧 TCP 二进制数据通道
 
-启动时在 5102 端口监听，接收 Platform Backend 的 TCP 连接请求。
+启动时在 6103 端口监听，接收 Platform Backend 的 TCP 连接请求。
 Collector._run_loop 每帧通过此通道向已连接客户端发送二进制 IQ 数据。
 
 传输格式（每帧）：
@@ -25,7 +25,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # 端口：数据通道（与 HTTP 5101 分离）
-TCP_DATA_PORT = 5102
+TCP_DATA_PORT = 6103
 
 # 帧头格式：frame_id(8) + timestamp(8) + data_len(4) = 20 bytes
 _FRAME_HEADER_FMT = "!QdI"  # big-endian: unsigned long long, double, unsigned int

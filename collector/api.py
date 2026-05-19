@@ -98,8 +98,8 @@ class CollectorAPI:
             # Wire up frame emission (Socket.IO + TCP)
             self._collector.on_iq_frame(self._make_frame_emitter())
             self._collector.on_iq_frame(self._make_tcp_frame_emitter())
-            # Start TCP data server on 5102
-            self._tcp_server = TCPDataServer(host="0.0.0.0", port=5102)
+            # Start TCP data server on 6103
+            self._tcp_server = TCPDataServer(host="0.0.0.0", port=6103)
             self._tcp_server.start()
 
     def _make_frame_emitter(self):
@@ -141,7 +141,7 @@ class CollectorAPI:
     def _start_tcp_server_once(self) -> None:
         """Ensure TCP data server is running."""
         if self._tcp_server is None:
-            self._tcp_server = TCPDataServer(host="0.0.0.0", port=5102)
+            self._tcp_server = TCPDataServer(host="0.0.0.0", port=6103)
             self._tcp_server.start()
 
     @staticmethod

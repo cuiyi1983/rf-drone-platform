@@ -1,9 +1,11 @@
 """
 CollectorIOClient - Platform 侧 TCP 二进制数据客户端
 
-从 Collector（5102端口）接收 IQ 数据帧，转发到 InferenceFramework。
-数据流：Collector TCP Server:5102 → CollectorIOClient.recv_loop() → put_frame(framework) → infer()
+从 Collector（6103端口）接收 IQ 数据帧，转发到 InferenceFramework。
+数据流：Collector TCP Server:6103 → CollectorIOClient.recv_loop() → put_frame(framework) → infer()
 """
+
+from __future__ import annotations
 
 import logging
 import socket
@@ -25,13 +27,13 @@ _SAMPLE_SIZE = 8  # 4 bytes real + 4 bytes imag
 class CollectorIOClient:
     """
     Platform 侧的 TCP 客户端。
-    连接到 Collector 的 TCP 数据端口（5102），接收二进制 IQ 数据并注入 InferenceFramework。
+    连接到 Collector 的 TCP 数据端口（6103），接收二进制 IQ 数据并注入 InferenceFramework。
     """
 
-    def __init__(self, collector_host: str = "localhost", collector_port: int = 5102):
+    def __init__(self, collector_host: str = "localhost", collector_port: int = 6103):
         self._host = collector_host
         self._port = collector_port
-        self._sock = None
+        self._sock: Optional[socket.socket] = None
         self._framework_ref = None
         self._thread: Optional[threading.Thread] = None
         self._running = False
@@ -41,8 +43,6 @@ class CollectorIOClient:
         连接到 Collector 的 TCP 数据端口并启动接收线程。
         framework: InferenceFramework 实例
         """
-        import socket
-
         self._framework_ref = framework
 
         try:

@@ -184,8 +184,8 @@ class Platform:
 
         # 从 http://localhost:5101 提取 host 和 port（HTTP API 端口）
         collector_host = self._collector_base_url.replace("http://", "").split(":")[0] or "localhost"
-        # TCP 数据端口固定 5102
-        collector_io = CollectorIOClient(collector_host=collector_host, collector_port=5102)
+        # TCP 数据端口固定 6103
+        collector_io = CollectorIOClient(collector_host=collector_host, collector_port=6103)
         connected = await collector_io.connect(framework, session_id)
         if connected:
             self._collector_io_client[session_id] = collector_io
