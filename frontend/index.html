@@ -3,101 +3,369 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RF Drone Platform — 无人机检测控制台</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <title>RF Drone Platform</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+:root{--bg:#0f0f23;--card:#1a1a2e;--chead:#16213e;--bdr:#0f3460;--acc:#e94560;--acc2:#00d9ff;--txt:#eee;--mut:#888}
+body{background:var(--bg);color:var(--txt);font-family:system-ui,sans-serif;min-height:100vh;margin:0;padding:0}
+a{text-decoration:none;color:var(--acc2)}
+
+/* Nav */
+.topnav{background:var(--card);border-bottom:1px solid var(--bdr);padding:0 1.5rem;display:flex;align-items:center;height:52px;}
+.brand{font-size:1rem;font-weight:700;color:var(--acc2);display:flex;align-items:center;gap:.4rem;}
+.nav-tabs{border:none;margin-left:2rem;}
+.nav-tabs .nav-link{color:var(--mut);border:none;padding:.85rem 1.1rem;font-size:.85rem;font-weight:500;border-bottom:2px solid transparent;}
+.nav-tabs .nav-link:hover{color:var(--txt);}
+.nav-tabs .nav-link.active{color:var(--acc2);border-bottom-color:var(--acc2);background:transparent;}
+/* Statusbar */
+.statusbar{margin-left:auto;display:flex;align-items:center;gap:1rem;font-size:.78rem;color:var(--mut);}
+.dot{width:8px;height:8px;border-radius:50%;}
+.dot.ok{background:#00ff00}.dot.bad{background:#ff4444}.dot.run{background:#ffff00;animation:bk .8s infinite}
+@keyframes bk{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Page */
+.container-fluid{padding:.85rem 1rem}
+
+/* Card */
+.card{background:var(--card);border:1px solid var(--bdr);border-radius:8px;margin-bottom:.85rem;}
+.chdr{background:var(--chead);border-bottom:1px solid var(--bdr);padding:.5rem .9rem;font-size:.72rem;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;justify-content:space-between;}
+.chdr .right-ops{display:flex;gap:.5rem;align-items:center;}
+.cbd{padding:.8rem}
+.pg{display:none}.pg.on{display:block}
+
+/* Form elements */
+.frm{background:var(--bg);border:1px solid var(--bdr);color:var(--txt);font-size:.82rem;padding:.3rem .6rem;border-radius:4px;width:100%}
+.frm:focus{border-color:var(--acc2);outline:none;box-shadow:none}
+select.frm{padding:.3rem .5rem}
+.lbl{font-size:.7rem;color:var(--mut);margin-bottom:.2rem}
+.inp{font-size:.82rem;padding:.3rem .6rem;}
+
+/* Buttons */
+.btn{font-size:.8rem;font-weight:600;padding:.32rem .8rem;border-radius:6px;border:none;cursor:pointer;}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-s{background:var(--acc2);color:#0f0f23}.btn-s:hover:not(:disabled){background:#00b8d9}
+.btn-p{background:var(--acc);color:#fff}.btn-p:hover:not(:disabled){background:#c73e54}
+.btn-i{background:transparent;border:1px solid var(--acc2);color:var(--acc2)}.btn-i:hover:not(:disabled){background:rgba(0,217,255,.1)}
+.btn-pr{background:var(--acc);color:#fff}.btn-pr:hover:not(:disabled){background:#c73e54}
+.d-grid{display:flex;flex-direction:column;gap:.5rem}
+
+/* Layout */
+.obs{display:grid;grid-template-columns:1fr 1fr;gap:.85rem}
+@media(max-width:800px){.obs{grid-template-columns:1fr}}
+.col-left,.col-right{display:flex;flex-direction:column;gap:.85rem}
+
+/* Info grid */
+.igrid{display:grid;grid-template-columns:1fr 1fr;gap:.35rem}
+.iit{background:var(--bg);border-radius:4px;padding:.35rem .55rem}
+.il{font-size:.6rem;color:var(--mut);text-transform:uppercase}
+.iv{font-size:.8rem;font-weight:600;color:var(--acc2)}
+/* Full width info item */
+.iit.wide{grid-column:1/-1}
+
+/* Control panel */
+.controls{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.7rem}
+.d-flex{align-items:center;gap:.4rem}
+.d-flex .lbl{white-space:nowrap}
+
+/* Real-time stats table */
+.rtable{width:100%;border-collapse:collapse;font-size:.75rem}
+.rtable th{text-align:left;padding:.35rem .5rem;color:var(--mut);font-weight:500;border-bottom:1px solid var(--bdr);font-size:.7rem;cursor:pointer;user-select:none}
+.rtable th:hover{color:var(--acc2)}
+.rtable td{padding:.4rem .5rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.rtable tr:hover td{background:rgba(255,255,255,.02)}
+.col-toggle{cursor:pointer;padding:.2rem .4rem;border:1px solid var(--bdr);border-radius:4px;font-size:.68rem;color:var(--mut);background:transparent}
+.col-toggle.active{background:rgba(0,217,255,.15);color:var(--acc2);border-color:var(--acc2)}
+.table-wrap{max-height:320px;overflow-y:auto}
+.table-wrap::-webkit-scrollbar{width:4px}
+.table-wrap::-webkit-scrollbar-track{background:var(--bg)}
+.table-wrap::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:2px}
+.rna{color:var(--mut)}.rfd{font-weight:600}
+.rdr{color:#e74c3c;font-weight:600}.rno{color:#27ae60}
+.no-data{color:var(--mut);text-align:center;padding:.8rem;font-size:.78rem}
+
+/* Buffer status bar */
+.buf-bar{display:flex;align-items:center;gap:.8rem;font-size:.75rem}
+.buf-track{flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden}
+.buf-fill{height:100%;background:var(--acc2);transition:width .3s}
+.buf-fill.warn{background:var(--acc)}
+.buf-val{color:var(--acc2);font-weight:600;font-size:.75rem;min-width:60px;text-align:right}
+
+/* Config page */
+.cplay{display:grid;grid-template-columns:1fr 1fr;gap:.85rem;max-width:960px}
+@media(max-width:800px){.cplay{grid-template-columns:1fr}}
+
+/* Config section headers */
+.cfg-section{display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem}
+.cfg-section i{color:var(--acc2)}
+.sel-row{display:flex;gap:.5rem;margin-bottom:.8rem;align-items:flex-end}
+.sel-row select{flex:1}
+.sel-row button{white-space:nowrap}
+
+/* Schema form */
+.schema-params{display:grid;grid-template-columns:1fr 1fr;gap:.4rem .6rem}
+.param-item{display:flex;flex-direction:column}
+.param-item label{font-size:.65rem;color:var(--mut);margin-bottom:.15rem;text-transform:uppercase}
+.param-item input,.param-item select{font-size:.78rem}
+
+/* Status message */
+.aps{font-size:.78rem;text-align:center;min-height:1.2rem}
+.aps .ok{color:#00ff00}.aps .err{color:#ff4444}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:2px}
+
+/* Flex utilities */
+.flex-row{display:flex;flex-direction:column;gap:.35rem}
+.row-gap{display:flex;gap:.5rem;flex-wrap:wrap}
+</style>
 </head>
 <body>
-  <div class="container">
 
-    <!-- ===== 标题 ===== -->
-    <header class="header">
-      <h1>🛸 RF Drone Platform</h1>
-      <p class="subtitle">无人机射频检测与识别系统</p>
-    </header>
+<nav class="topnav">
+  <a class="brand" href="#"><i class="bi bi-broadcast"></i> RF Drone Platform</a>
+  <ul class="nav nav-tabs" id="tabs">
+    <li class="nav-item"><a class="nav-link on" href="#" data-pg="obs"><i class="bi bi-graph-up"></i> 观测页面</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" data-pg="cfg"><i class="bi bi-gear"></i> 配置页面</a></li>
+  </ul>
+  <div class="statusbar">
+    <span id="dot" class="dot bad"></span>
+    <span id="stat">采集器连接中...</span>
+    <span style="opacity:.3">|</span>
+    <span id="mdl">未加载模型</span>
+  </div>
+</nav>
 
-    <!-- ===== 设备选择器 ===== -->
-    <section class="card">
-      <h2>设备选择</h2>
-      <div class="form-row">
-        <label for="collector-type">采集器类型</label>
-        <select id="collector-type">
-          <!-- 后端暂不支持按类型过滤，此选项仅供 UI 展示，设备列表为全量 -->
-          <option value="">全部类型</option>
-          <option value="PlutoSDR">PlutoSDR</option>
-          <option value="Simulator">Simulator（模拟器）</option>
-        </select>
+<div class="container-fluid">
 
-        <label for="device-select">设备</label>
-        <select id="device-select">
-          <option value="">— 加载中 —</option>
-        </select>
-      </div>
-    </section>
+<!-- ============ 观测页面 ============ -->
+<div id="pg-obs" class="pg on">
+<div class="obs">
 
-    <!-- ===== 采集控制 ===== -->
-    <section class="card">
-      <h2>会话控制</h2>
-      <div class="controls">
-        <button id="btn-start" class="btn btn-primary" disabled>▶ 启动会话</button>
-        <button id="btn-stop" class="btn btn-danger" disabled>■ 停止会话</button>
-        <button id="btn-refresh-devices" class="btn btn-secondary">⟳ 刷新设备</button>
-      </div>
-      <div id="session-info" class="session-info" style="display:none;">
-        <span class="badge" id="session-status-badge">—</span>
-        <span id="session-id-display"></span>
-      </div>
-    </section>
-
-    <!-- ===== 状态显示 ===== -->
-    <section class="card">
-      <h2>设备状态</h2>
-      <div class="stats-grid">
-        <div class="stat-item">
-          <span class="stat-label">设备连接</span>
-          <span class="stat-value" id="stat-connection">—</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-label">采集状态</span>
-          <span class="stat-value" id="stat-collecting">—</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-label">采集帧率 (FPS)</span>
-          <span class="stat-value" id="stat-fps">—</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-label">丢帧率</span>
-          <span class="stat-value" id="stat-dropped">—</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-label">总帧数</span>
-          <span class="stat-value" id="stat-total-frames">—</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-label">缓冲区深度</span>
-          <span class="stat-value" id="stat-buffer-level">—</span>
+  <!-- 左侧：实时推理统计表 -->
+  <div class="col-left">
+    <div class="card" style="flex:1;display:flex;flex-direction:column;">
+      <div class="chdr">
+        <span><i class="bi bi-bar-chart-fill"></i> 实时推理统计</span>
+        <div class="right-ops">
+          <button class="col-toggle active" data-col="timestamp" title="切换列">时间</button>
+          <button class="col-toggle active" data-col="freq_mhz" title="切换列">频率MHz</button>
+          <button class="col-toggle active" data-col="power_db" title="切换列">功率dB</button>
+          <button class="col-toggle active" data-col="is_drone" title="切换列">检测结果</button>
+          <button class="col-toggle active" data-col="drone_prob" title="切换列">Drone%</button>
+          <button class="col-toggle" data-col="process_time_ms" title="切换列">推理ms</button>
         </div>
       </div>
-    </section>
-
-    <!-- ===== 推理结果 ===== -->
-    <section class="card">
-      <h2>推理结果 <span id="result-count" class="result-count">0 条</span></h2>
-      <div id="detection-list" class="detection-list">
-        <div class="empty-state">暂无检测结果，等待启动会话…</div>
+      <div class="cbd" style="flex:1;overflow:hidden">
+        <div class="table-wrap">
+          <table class="rtable">
+            <thead id="rthead">
+              <tr>
+                <th data-col="timestamp">时间</th>
+                <th data-col="freq_mhz">频率(MHz)</th>
+                <th data-col="power_db">功率(dB)</th>
+                <th data-col="is_drone">检测结果</th>
+                <th data-col="drone_prob">Drone%</th>
+              </tr>
+            </thead>
+            <tbody id="rtbody">
+              <tr><td colspan="5" class="no-data">等待启动采数…</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </section>
+    </div>
 
-    <!-- ===== 错误日志 ===== -->
-    <section class="card">
-      <h2>运行日志</h2>
-      <div id="log-container" class="log-container">
-        <div class="log-entry log-info">✅ 前端已初始化</div>
+    <!-- 配置信息块 -->
+    <div class="card">
+      <div class="chdr"><i class="bi bi-info-circle"></i> 当前配置</div>
+      <div class="cbd">
+        <div class="igrid">
+          <div class="iit">
+            <div class="il">推理组件</div>
+            <div class="iv" id="cfg-component">--</div>
+          </div>
+          <div class="iit">
+            <div class="il">采数设备</div>
+            <div class="iv" id="cfg-device">--</div>
+          </div>
+          <div class="iit">
+            <div class="il">中心频率</div>
+            <div class="iv" id="cfg-freq">--</div>
+          </div>
+          <div class="iit">
+            <div class="il">采样率</div>
+            <div class="iv" id="cfg-sr">--</div>
+          </div>
+          <div class="iit">
+            <div class="il">增益</div>
+            <div class="iv" id="cfg-gain">--</div>
+          </div>
+          <div class="iit">
+            <div class="il">带宽</div>
+            <div class="iv" id="cfg-bw">--</div>
+          </div>
+        </div>
       </div>
-    </section>
-
+    </div>
   </div>
 
-  <script src="app.js"></script>
+  <!-- 右侧：控制 + Buffer监控 -->
+  <div class="col-right">
+
+    <!-- 控制面板 -->
+    <div class="card">
+      <div class="chdr"><i class="bi bi-play-circle"></i> 控制</div>
+      <div class="cbd">
+        <div class="d-grid">
+          <button id="btnS" class="btn btn-s" disabled><i class="bi bi-play-fill"></i> 启动采数</button>
+          <button id="btnX" class="btn btn-p" disabled><i class="bi bi-stop-fill"></i> 停止采数</button>
+        </div>
+        <div style="margin-top:.8rem;border-top:1px solid var(--bdr);padding-top:.6rem">
+          <div class="form-check" style="display:flex;align-items:center;gap:.5rem">
+            <input class="form-check-input" type="checkbox" id="recChk" style="accent-color:var(--acc2)" disabled>
+            <label class="form-check-label" for="recChk" style="font-size:.78rem;color:var(--mut)">
+              <i class="bi bi-record-circle"></i> IQ 录制
+            </label>
+            <span style="font-size:.65rem;color:#666">（连接采集器后可用）</span>
+          </div>
+        </div>
+        <div style="margin-top:.6rem;font-size:.72rem;color:var(--mut)">
+          <div class="d-flex justify-content-between mb-1"><span>采集器</span><span id="crt" style="color:var(--acc2)">--</span></div>
+          <div class="d-flex justify-content-between mb-1"><span>采集状态</span><span id="cst">已停止</span></div>
+          <div class="d-flex justify-content-between"><span>推理次数</span><span id="cnt">0</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Buffer 状态监控 -->
+    <div class="card">
+      <div class="chdr"><i class="bi bi-shield"></i> 缓冲区监控</div>
+      <div class="cbd">
+        <div class="buf-bar">
+          <span style="font-size:.68rem;color:var(--mut);white-space:nowrap">Buffer</span>
+          <div class="buf-track">
+            <div class="buf-fill" id="buf-fill" style="width:0%"></div>
+          </div>
+          <span class="buf-val" id="buf-val">--</span>
+        </div>
+        <div class="igrid" style="margin-top:.6rem">
+          <div class="iit">
+            <div class="il">丢帧率</div>
+            <div class="iv" id="buf-dropped">--</div>
+          </div>
+          <div class="iit">
+            <div class="il">FPS</div>
+            <div class="iv" id="buf-fps">--</div>
+          </div>
+          <div class="iit">
+            <div class="il">总帧数</div>
+            <div class="iv" id="buf-frames">--</div>
+          </div>
+          <div class="iit">
+            <div class="il">采集状态</div>
+            <div class="iv" id="buf-coll">--</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 调试日志 -->
+    <div class="card">
+      <div class="chdr"><i class="bi bi-terminal"></i> 运行日志</div>
+      <div class="cbd">
+        <pre id="di" style="font-size:.65rem;color:var(--mut);max-height:120px;overflow-y:auto;background:var(--bg);border-radius:4px;padding:.4rem;margin:0;font-family:'Courier New',monospace">等待初始化...</pre>
+      </div>
+    </div>
+
+  </div><!-- /col-right -->
+</div><!-- /obs -->
+</div><!-- /pg-obs -->
+
+<!-- ============ 配置页面 ============ -->
+<div id="pg-cfg" class="pg">
+<div class="cplay">
+
+  <!-- 推理组件配置 -->
+  <div class="card">
+    <div class="chdr"><i class="bi bi-cpu"></i> 推理组件配置</div>
+    <div class="cbd">
+      <div class="sel-row">
+        <div style="flex:1">
+          <div class="lbl">选择推理组件</div>
+          <select class="frm" id="msel">
+            <option value="">-- 选择组件 --</option>
+          </select>
+        </div>
+        <button id="mlbtn" class="btn btn-pr"><i class="bi bi-download"></i> 加载</button>
+      </div>
+      <!-- 动态参数表单 -->
+      <div id="schema-params" class="schema-params" style="display:none">
+        <!-- 由 JS 动态生成 -->
+      </div>
+      <div id="cfg-applied" class="aps" style="margin-top:.5rem"></div>
+    </div>
+  </div>
+
+  <!-- 采集器配置 -->
+  <div class="card">
+    <div class="chdr"><i class="bi bi-antenna"></i> 采集器配置</div>
+    <div class="cbd">
+      <div class="sel-row">
+        <div style="flex:1">
+          <div class="lbl">设备</div>
+          <select class="frm" id="deviceSel">
+            <option value="">-- 扫描设备 --</option>
+          </select>
+        </div>
+        <button id="scanBtn" class="btn btn-i"><i class="bi bi-search"></i> 扫描</button>
+      </div>
+
+      <!-- 采集器参数（动态加载） -->
+      <div id="collector-params" style="display:none">
+        <div class="igrid" style="margin-top:.4rem">
+          <div class="iit">
+            <div class="il">中心频率 (MHz)</div>
+            <input class="frm inp" id="cf" value="5805">
+          </div>
+          <div class="iit">
+            <div class="il">采样率 (MHz)</div>
+            <input class="frm inp" id="sr" value="60">
+          </div>
+          <div class="iit">
+            <div class="il">增益 (dB)</div>
+            <input class="frm inp" id="gain" value="20">
+          </div>
+          <div class="iit">
+            <div class="il">带宽 (MHz)</div>
+            <input class="frm inp" id="bw" value="56">
+          </div>
+        </div>
+      </div>
+
+      <button id="apbtn" class="btn btn-pr w-100" style="margin-top:.8rem;background:var(--acc);color:#fff"><i class="bi bi-check-lg"></i> 连接采集器</button>
+      <div id="aps" class="aps" style="margin-top:.4rem"></div>
+    </div>
+  </div>
+
+</div><!-- /cplay -->
+
+<!-- 调试信息 -->
+<div class="card mt-3" style="max-width:960px">
+  <div class="chdr"><i class="bi bi-info-circle"></i> 调试信息</div>
+  <div class="cbd">
+    <div class="igrid">
+      <div class="iit"><div class="il">推理次数</div><div class="iv" id="ds-inf-count">0</div></div>
+      <div class="iit"><div class="il">处理耗时</div><div class="iv" id="ds-inf-time">0 ms</div></div>
+      <div class="iit"><div class="il">输入Shape</div><div class="iv" id="ds-inf-in">--</div></div>
+      <div class="iit"><div class="il">输出Shape</div><div class="iv" id="ds-inf-out">--</div></div>
+    </div>
+  </div>
+</div>
+</div><!-- /pg-cfg -->
+
+</div><!-- /container-fluid -->
+
+<script src="app.js"></script>
 </body>
 </html>

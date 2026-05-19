@@ -468,7 +468,11 @@ class Platform:
 
 # ── FastAPI App ──────────────────────────────────────────────────────────────
 
+from fastapi.staticfiles import StaticFiles
+
 app = FastAPI(title="RF-Drone-Platform Backend", version="1.0.0")
+
+# Serve frontend static files
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -476,6 +480,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files (must be after app creation)
 
 
 # ── 405 例外处理：OPTIONS 预检请求直接返回 200 ──────────────────────────────
@@ -497,6 +503,16 @@ platform = Platform()
 @app.on_event("startup")
 async def startup():
     await platform.startup(app)
+    # Mount frontend static files
+    import os
+    frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'frontend')
+    if os.path.isdir(frontend_dir):
+        app.mount('/static', StaticFiles(directory=frontend_dir), name='static')
+    # Redirect root to frontend
+    @app.get('/')
+    async def root():
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url='/static/index.html')
 
 
 @app.on_event("shutdown")
