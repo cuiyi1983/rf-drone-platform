@@ -182,9 +182,13 @@ class Platform:
 
         framework.start()
 
-        # 从 http://localhost:5101 提取 host 和 port（HTTP API 端口）
+        # 从 http://localhost:5101 提取 host（TCP 连接目标）
         collector_host = self._collector_base_url.replace("http://", "").split(":")[0] or "localhost"
-        # TCP 数据端口固定 6103
+
+        # 启动采集（通知 Collector 开始）— 必须先于 TCP 连接，确保 Collector 侧 TCP server 已就绪
+        conn_result = await self._collector_start(session_id, merged_config)
+
+        # 再建立 TCP 数据通道
         collector_io = CollectorIOClient(collector_host=collector_host, collector_port=6103)
         connected = await collector_io.connect(framework, session_id)
         if connected:
@@ -206,9 +210,6 @@ class Platform:
 
         self._frameworks[session_id] = framework
         self._inference_history[session_id] = []
-
-        # 启动采集（通知 Collector）
-        conn_result = await self._collector_start(session_id, merged_config)
 
         return {
             "session_id": session_id,

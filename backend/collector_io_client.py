@@ -7,6 +7,7 @@ CollectorIOClient - Platform 侧 TCP 二进制数据客户端
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 import struct
@@ -42,16 +43,27 @@ class CollectorIOClient:
         """
         连接到 Collector 的 TCP 数据端口并启动接收线程。
         framework: InferenceFramework 实例
+
+        连接失败时自动重试（最多 3 次，间隔 200ms），应对 Windows 时序问题。
         """
         self._framework_ref = framework
 
-        try:
-            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self._sock.settimeout(10.0)
-            self._sock.connect((self._host, self._port))
-            logger.info(f"CollectorIOClient: 已连接到 {self._host}:{self._port}")
-        except Exception as e:
-            logger.error(f"CollectorIOClient: 连接失败: {e}")
+        # 重试机制：应对 Collector 侧 TCP server 尚未完全就绪的情况
+        for attempt in range(1, 4):
+            try:
+                self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self._sock.settimeout(10.0)
+                self._sock.connect((self._host, self._port))
+                logger.info(f"CollectorIOClient: 已连接到 {self._host}:{self._port}")
+                break  # 连接成功，跳出重试
+            except Exception as e:
+                logger.warning(f"CollectorIOClient: 连接失败 (尝试 {attempt}/3): {e}")
+                if attempt < 3:
+                    await asyncio.sleep(0.2)  # 等待 200ms 后重试
+                self._sock = None
+
+        if self._sock is None:
+            logger.error(f"CollectorIOClient: 3 次连接尝试均失败")
             return False
 
         self._running = True
@@ -73,7 +85,7 @@ class CollectorIOClient:
 
     def _recv_loop(self) -> None:
         """
-        接收线程：从 TCP socket 持续读取二进制 IQ 帧，解码后 put_frame。
+        接收线程：从 TCP socket 持续读取二进制 IQ 数据帧，转发给框架。
         帧格式：frame_id(8) + timestamp(8) + data_len(4) + data_len×float32×2
         """
         while self._running:
@@ -117,3 +129,7 @@ class CollectorIOClient:
                 if self._running:
                     logger.debug(f"CollectorIOClient: recv error: {e}")
                 continue
+
+    def is_connected(self) -> bool:
+        """返回 TCP 连接是否存活"""
+        return self._sock is not None and self._running
