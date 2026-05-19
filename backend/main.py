@@ -19,7 +19,7 @@ from .api.devices import inject_platform as inject_devices
 from .api.session import inject_platform as inject_session
 from .config_manager import ConfigManager
 from .inference.framework import InferenceFramework
-from .socketio.server import SocketIOServer
+from .socketio.server import SocketIOServer, PlatformNamespace
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -528,7 +528,7 @@ app.include_router(components.router)
 app.include_router(devices.router)
 app.include_router(collector_proxy.router)
 
-# 挂载 Socket.IO
+# 挂载 Socket.IO 到 /socket.io 路径（必须在路由注册后）
 def create_socketio_app(fastapi_app: Any) -> Any:
     """
     创建 Socket.IO ASGI 应用并挂载到 FastAPI 的 /socket.io 路径。
@@ -554,6 +554,9 @@ def create_socketio_app(fastapi_app: Any) -> Any:
 
     logger.info("Socket.IO 已挂载到 /socket.io")
     return sio
+
+
+create_socketio_app(app)
 
 
 # ── 健康检查 ────────────────────────────────────────────────────────────────
