@@ -76,6 +76,21 @@ async def session_status(session_id: Optional[str] = None) -> dict:
     return result
 
 
+@router.get("/{session_id}/config")
+async def get_session_config(session_id: str) -> dict:
+    """
+    GET /api/v1/session/{session_id}/config
+    查询会话当前配置（推理组件配置 + 采集器配置）
+    """
+    if _platform_ref is None:
+        raise HTTPException(status_code=500, detail="Platform not initialized")
+
+    result = await _platform_ref.get_session_config(session_id)
+    if result.get("error"):
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
 @router.patch("/{session_id}/config")
 async def update_session_config(session_id: str, request: dict) -> dict:
     """

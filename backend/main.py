@@ -248,6 +248,45 @@ class Platform:
         else:
             return {"sessions": [s.copy() for s in self._sessions.values()]}
 
+    async def get_session_config(self, session_id: str) -> dict:
+        """查询会话当前配置（推理组件配置 + 采集器配置）"""
+        if session_id not in self._sessions:
+            return {"error": "会话不存在", "code": 1003}
+
+        session = self._sessions[session_id]
+        component_id = session["component_id"]
+        component = self._components.get(component_id, {})
+
+        # 推理组件配置：来源为用户调用 start 时传入的 config 合并组件 schema defaults
+        user_config = session.get("current_config", {})
+        inference_config = {
+            k: v for k, v in user_config.items()
+            if k in component.get("config_schema", {})
+        }
+        # 补充组件声明的 default 值（用户未指定时）
+        for k, schema in component.get("config_schema", {}).items():
+            if k not in inference_config and "default" in schema:
+                inference_config[k] = schema["default"]
+
+        # 采集器配置
+        collector_config = {
+            k: v for k, v in user_config.items()
+            if k not in component.get("config_schema", {})
+        }
+
+        # 设备信息
+        device_info = session.get("device_info", {})
+
+        return {
+            "session_id": session_id,
+            "component_id": component_id,
+            "component_name": component.get("name", ""),
+            "component_version": component.get("version", ""),
+            "inference_config": inference_config,
+            "collector_config": collector_config,
+            "device_info": device_info,
+        }
+
     async def update_session_config(self, session_id: str, config: dict) -> dict:
         """更新会话配置"""
         if session_id not in self._sessions:
