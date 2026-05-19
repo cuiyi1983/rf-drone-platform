@@ -297,9 +297,14 @@ class PlutoDevice(IDevice):
             num_samples = self._buffer_size
         raw = self._sdr.rx()
         # Convert complex to interleaved float32 bytes
-        iq = np.empty(raw.nbytes, dtype=np.float32)
-        iq[0::2] = raw.real.astype(np.float32)
-        iq[1::2] = raw.imag.astype(np.float32)
+        # Bug: np.empty(raw.nbytes) allocates raw.nbytes/4=float32 elements (4194304)
+        # but raw.real/imag each have 524288 complex samples (complex64=8bytes/sample)
+        # Fix: size by element count, not byte count
+        real_f = raw.real.astype(np.float32)
+        imag_f = raw.imag.astype(np.float32)
+        iq = np.empty(len(real_f) * 2, dtype=np.float32)
+        iq[0::2] = real_f
+        iq[1::2] = imag_f
         return iq.tobytes()
 
     def get_temperature(self) -> Optional[float]:
