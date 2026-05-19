@@ -20,6 +20,7 @@ from collector.collector import Collector, CollectorConfig, CollectorState, IQFr
 from collector.devices import DeviceCapabilities, discover_devices
 from collector.simulator import IQSimulator
 from collector.socketio_server import get_socketio_server
+from collector.tcp_data_server import TCPDataServer
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ class CollectorAPI:
         self._simulator = IQSimulator()
         self._socketio_started = False
         self._mock_devices = mock_devices
+        self._tcp_server: Optional[TCPDataServer] = None
         if mock_devices:
             logger.info("CollectorAPI: mock_devices 模式启用")
 
@@ -88,13 +90,17 @@ class CollectorAPI:
     # Internal helpers
     # ------------------------------------------------------------------
     def _start_socketio_once(self, host: str, port: int) -> None:
-        """Start the Socket.IO server once (lazy)."""
+        """Start the Socket.IO server and TCP data server once (lazy)."""
         if not self._socketio_started:
             io_srv = get_socketio_server(host=host, port=port)
             io_srv.start()
             self._socketio_started = True
-            # Wire up frame emission
+            # Wire up frame emission (Socket.IO + TCP)
             self._collector.on_iq_frame(self._make_frame_emitter())
+            self._collector.on_iq_frame(self._make_tcp_frame_emitter())
+            # Start TCP data server on 5102
+            self._tcp_server = TCPDataServer(host="0.0.0.0", port=5102)
+            self._tcp_server.start()
 
     def _make_frame_emitter(self):
         """Return a callback that emits IQ frames via Socket.IO."""
@@ -119,6 +125,24 @@ class CollectorAPI:
             io_srv.emit_frame(session_id, frame_dict)
 
         return emit_frame
+
+    def _make_tcp_frame_emitter(self):
+        """Return a callback that sends IQ frames via TCP binary stream."""
+        tcp_server_ref = [None]
+
+        def emit_frame(frame: IQFrame):
+            if tcp_server_ref[0] is None:
+                tcp_server_ref[0] = self._tcp_server
+            if tcp_server_ref[0]:
+                tcp_server_ref[0].broadcast_frame(frame.frame_id, frame.timestamp, frame.iq_data)
+
+        return emit_frame
+
+    def _start_tcp_server_once(self) -> None:
+        """Ensure TCP data server is running."""
+        if self._tcp_server is None:
+            self._tcp_server = TCPDataServer(host="0.0.0.0", port=5102)
+            self._tcp_server.start()
 
     @staticmethod
     def _complex_to_list(iq: "np.ndarray") -> list:

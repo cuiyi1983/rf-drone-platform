@@ -1,137 +1,119 @@
 """
-CollectorIOClient - Platform 侧 Socket.IO 客户端
+CollectorIOClient - Platform 侧 TCP 二进制数据客户端
 
-从 Collector（5101）接收 IQ 数据帧，转发到 InferenceFramework。
-数据流：Collector Socket.IO → Platform Socket.IO Client → put_frame(framework) → infer()
+从 Collector（5102端口）接收 IQ 数据帧，转发到 InferenceFramework。
+数据流：Collector TCP Server:5102 → CollectorIOClient.recv_loop() → put_frame(framework) → infer()
 """
 
-import asyncio
 import logging
+import socket
+import struct
+import threading
 from typing import Optional
 
-import socketio
+import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# 帧头格式：frame_id(8) + timestamp(8) + data_len(4) = 20 bytes
+_FRAME_HEADER_FMT = "!QdI"  # big-endian
+_FRAME_HEADER_SIZE = struct.calcsize(_FRAME_HEADER_FMT)
+# 传输格式：实部虚部交织 float32，每样本 8 bytes
+_SAMPLE_SIZE = 8  # 4 bytes real + 4 bytes imag
 
 
 class CollectorIOClient:
     """
-    Platform 侧的 Socket.IO 客户端。
-    连接到 Collector 的 Socket.IO 服务器，接收 IQ 数据帧并注入 InferenceFramework。
+    Platform 侧的 TCP 客户端。
+    连接到 Collector 的 TCP 数据端口（5102），接收二进制 IQ 数据并注入 InferenceFramework。
     """
 
-    def __init__(self, collector_url: str = "http://localhost:5101"):
-        self._collector_url = collector_url
-        self._sio: Optional[socketio.AsyncClient] = None
-        self._framework_ref = None  # InferenceFramework 实例
-        self._session_id: Optional[str] = None
+    def __init__(self, collector_host: str = "localhost", collector_port: int = 5102):
+        self._host = collector_host
+        self._port = collector_port
+        self._sock = None
+        self._framework_ref = None
+        self._thread: Optional[threading.Thread] = None
         self._running = False
-
-    # ── 生命周期 ───────────────────────────────────────────────────
 
     async def connect(self, framework, session_id: str) -> bool:
         """
-        连接到 Collector Socket.IO 并订阅 session_id 房间。
-        framework: InferenceFramework 实例（用于 put_frame）
+        连接到 Collector 的 TCP 数据端口并启动接收线程。
+        framework: InferenceFramework 实例
         """
+        import socket
+
         self._framework_ref = framework
-        self._session_id = session_id
-
-        sio = socketio.AsyncClient(
-            reconnection=True,
-            reconnection_attempts=3,
-            reconnection_delay=1.0,
-        )
-
-        @sio.on("connect", namespace="/")
-        async def on_connect():
-            logger.info("CollectorIOClient: 已连接到 Collector Socket.IO")
-            # 订阅 session 房间
-            await sio.emit("subscribe", {"session_id": session_id}, namespace="/")
-            logger.info(f"CollectorIOClient: 已订阅 session {session_id}")
-
-        @sio.on("disconnect", namespace="/")
-        async def on_disconnect():
-            logger.info("CollectorIOClient: 与 Collector Socket.IO 断开")
-
-        @sio.on("message", namespace="/")
-        async def on_message(data):
-            """接收 Collector 推送的事件（iq_frame / collector_stats 等）"""
-            if not data:
-                return
-            event_type = data.get("type", "")
-            if event_type == "iq_frame":
-                await self._handle_iq_frame(data.get("frame", {}))
-            elif event_type == "collector_stats":
-                # 透传给 Platform 的 stats 回调（通过 framework 统计）
-                logger.debug(f"Collector stats: {data.get('stats')}")
-
-        @sio.on("error", namespace="/")
-        async def on_error(data):
-            logger.warning(f"Collector Socket.IO error event: {data}")
 
         try:
-            await sio.connect(
-                self._collector_url,
-                transports=["polling"],
-                socketio_path="/socket.io",
-            )
-            self._sio = sio
-            self._running = True
-            return True
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._sock.settimeout(10.0)
+            self._sock.connect((self._host, self._port))
+            logger.info(f"CollectorIOClient: 已连接到 {self._host}:{self._port}")
         except Exception as e:
             logger.error(f"CollectorIOClient: 连接失败: {e}")
             return False
 
+        self._running = True
+        self._thread = threading.Thread(target=self._recv_loop, name="tcp-io-client", daemon=True)
+        self._thread.start()
+        return True
+
     async def disconnect(self) -> None:
-        """断开连接"""
+        """断开连接并停止接收线程"""
         self._running = False
-        if self._sio:
+        if self._sock:
             try:
-                await self._sio.disconnect()
-            except Exception as e:
-                logger.debug(f"CollectorIOClient: disconnect error: {e}")
-            self._sio = None
+                self._sock.close()
+            except Exception:
+                pass
+            self._sock = None
         self._framework_ref = None
-        self._session_id = None
+        logger.info("CollectorIOClient: 已断开")
 
-    # ── 内部处理 ───────────────────────────────────────────────────
-
-    async def _handle_iq_frame(self, frame: dict) -> None:
+    def _recv_loop(self) -> None:
         """
-        处理接收到的 IQ 帧。
-        将帧转换为 InferenceFramework 期望的格式并注入。
+        接收线程：从 TCP socket 持续读取二进制 IQ 帧，解码后 put_frame。
+        帧格式：frame_id(8) + timestamp(8) + data_len(4) + data_len×float32×2
         """
-        if not self._framework_ref:
-            return
+        while self._running:
+            try:
+                # 读取帧头
+                header = self._sock.recv(_FRAME_HEADER_SIZE, socket.MSG_WAITALL)
+                if not header or len(header) < _FRAME_HEADER_SIZE:
+                    continue
 
-        try:
-            # frame 格式：{frame_id, burst_id, timestamp, center_freq, sample_rate, iq_data, metadata}
-            iq_data = frame.get("iq_data", [])
-            if not iq_data:
-                return
+                frame_id, timestamp, data_len = struct.unpack(_FRAME_HEADER_FMT, header)
 
-            # 转换为复数形式 [real + j*imag]
-            import numpy as np
+                # 读取 IQ 数据
+                byte_count = data_len * _SAMPLE_SIZE
+                data = b""
+                while len(data) < byte_count:
+                    chunk = self._sock.recv(byte_count - len(data), socket.MSG_WAITALL)
+                    if not chunk:
+                        break
+                    data += chunk
 
-            arr = np.array(iq_data, dtype=np.float32)
-            if arr.ndim == 2 and arr.shape[1] == 2:
-                iq_complex = arr[:, 0] + 1j * arr[:, 1]
-            else:
-                logger.warning(f"CollectorIOClient: iq_data 格式异常 shape={arr.shape}")
-                return
+                if len(data) < byte_count:
+                    logger.warning("CollectorIOClient: 数据不完整，丢弃帧 %d", frame_id)
+                    continue
 
-            # 构造 iq_frame dict（InferenceFramework 期望的格式）
-            iq_frame = {
-                "frame_id": frame.get("frame_id", 0),
-                "burst_id": frame.get("burst_id", 0),
-                "timestamp": frame.get("timestamp", 0.0),
-                "center_freq": frame.get("center_freq", 5_805_000_000),
-                "sample_rate": frame.get("sample_rate", 60_000_000),
-                "iq_data": iq_complex,
-            }
+                # 解码为复数数组
+                arr = np.frombuffer(data, dtype=np.float32)
+                iq_complex = arr[0::2] + 1j * arr[1::2]
 
-            self._framework_ref.put_frame(iq_frame)
+                # 构造 iq_frame dict 并注入框架
+                if self._framework_ref:
+                    iq_frame = {
+                        "frame_id": frame_id,
+                        "timestamp": timestamp,
+                        "iq_data": iq_complex.astype(np.complex64),
+                    }
+                    self._framework_ref.put_frame(iq_frame)
 
-        except Exception as e:
-            logger.error(f"CollectorIOClient: 处理 iq_frame 异常: {e}")
+            except socket.timeout:
+                continue
+            except Exception as e:
+                if self._running:
+                    logger.debug(f"CollectorIOClient: recv error: {e}")
+                continue
