@@ -68,7 +68,7 @@ class Platform:
         self._requests.headers.update({"User-Agent": "RF-Drone-Platform/1.0"})
 
         # 注册模拟组件
-        self._register_mock_components()
+        self._register_sim_components()
 
         # 注册模拟设备
         await self._discover_devices()
@@ -94,38 +94,15 @@ class Platform:
 
     # ── 模拟数据 ─────────────────────────────────────────────────
 
-    def _register_mock_components(self) -> None:
-        """注册模拟组件（实际从组件注册表读取）"""
+    def _register_sim_components(self) -> None:
+        """注册内置模拟组件（与真实 .zip 组件同等对待）"""
+        from backend.components.sim_component import COMPONENT_ENTRY
         self._components = {
-            "rfuav-two-stage": {
-                "id": "rfuav-two-stage",
-                "name": "RFUAV 两阶段推理",
-                "version": "2.0.0",
-                "type": "inference",
-                "capability": {"device_support": ["npu", "gpu", "cpu"]},
-                "collector_requirements": {
-                    "min_data_points": 600000,
-                    "frequency": 5_805_000_000,
-                    "buffer_size": 524_288,
-                    "gain": 20,
-                    "scan": {
-                        "enabled": True,
-                        "frequencies": [5_805_000_000, 2_450_000_000],
-                        "hop_interval_ms": 100
-                    }
-                },
-                "io": {
-                    "input": [{"name": "iq_frame", "type": "dict"}],
-                    "output": [{"name": "detections"}, {"name": "debug"}]
-                },
-                "config_schema": {
-                    "confidence_threshold": {
-                        "type": "number",
-                        "default": 0.5,
-                        "minimum": 0,
-                        "maximum": 1
-                    }
-                }
+            COMPONENT_ENTRY["id"]: {
+                **COMPONENT_ENTRY["manifest"]["component"],
+                "version": COMPONENT_ENTRY["version"],
+                "type": COMPONENT_ENTRY["manifest"]["component"].get("type", "inference"),
+                **COMPONENT_ENTRY["manifest"]  # 展开 capability / collector_requirements / io / config_schema
             }
         }
 
@@ -192,11 +169,16 @@ class Platform:
             error_callback=lambda err: self._on_error(session_id, err)
         )
 
-        # Mock 组件实例（实际加载 .zip）
-        mock_component = MockComponent(component)
+        # 使用组件实例（内置 SimComponent 或真实 .zip 组件）
+        if component_id == "sim-inference":
+            from backend.components.sim_component import SimComponent
+            component_instance = SimComponent()
+        else:
+            # TODO: 真实组件从 .zip 包加载，临时沿用 SimComponent 做占位
+            component_instance = MockComponent(component)
         device = "cpu"  # 实际通过 ONNX Runtime 检测
 
-        if not framework.load_component(component_id, mock_component, config, device):
+        if not framework.load_component(component_id, component_instance, config, device):
             return {"error": "组件初始化失败", "code": 1002}
 
         framework.start()
