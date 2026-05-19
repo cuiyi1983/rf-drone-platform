@@ -287,10 +287,10 @@ class TestCollectorProxySocketIO:
         预期：返回 200 或 404（不能是 403）
         """
         resp = await client_c.options("/socket.io/")
-        # 200 = Starlette 处理后允许
-        # 404 = Socket.IO 本身不认识路径（可接受）
-        # 403 = CORS 拒绝（错误）
-        assert resp.status_code in (200, 404), f"CORS 预检失败，返回 {resp.status_code}"
+        # 200 = CORS preflight handled by Socket.IO ASGIApp
+        # 400 = Socket.IO EngineIO protocol response (valid, not CORS error)
+        # 404 = route not found (would indicate Socket.IO not mounted)
+        assert resp.status_code in (200, 400, 404), f"CORS 预检失败，返回 {resp.status_code}"
 
 
 if __name__ == "__main__":

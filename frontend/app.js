@@ -9,6 +9,8 @@ const API_BASE = 'http://localhost:5100';
 const S = {
   session_id: null,
   collecting: false,
+  component_loaded: false,  // 组件是否已加载
+  collector_connected: false, // 采集器是否已连接
   components: [],
   devices: [],
   inf_count: 0,
@@ -79,8 +81,15 @@ function initSocket() {
   socket.on('device_status', (data) => {
     const icons = { connected: '🟢', disconnected: '🔴', error: '🔴' };
     log(`${icons[data.event] || '⚪'} ${data.device_id} — ${data.detail || data.event}`);
-    if (data.event === 'connected') updateStatusDot('ok', '采集器已连接');
-    else if (data.event === 'disconnected' || data.event === 'error') updateStatusDot('bad', '采集器未连接');
+    if (data.event === 'connected') {
+      S.collector_connected = true;
+      updateStatusDot('ok', '采集器已连接');
+      updateButtonStates();
+    } else if (data.event === 'disconnected' || data.event === 'error') {
+      S.collector_connected = false;
+      updateStatusDot('bad', '采集器未连接');
+      updateButtonStates();
+    }
   });
 
   socket.on('error', (data) => {
@@ -143,8 +152,10 @@ function handleCollectorStats(data) {
 function updateStatusDot(cls, text) {
   const dot = $('dot');
   const stat = $('stat');
+  const mdl = $('mdl');
   if (dot) dot.className = 'dot ' + cls;
   if (stat) stat.textContent = text;
+  if (mdl) mdl.textContent = S.component_loaded ? '模型已加载' : '未加载模型';
 }
 
 // ---- Update button states -----------------------------------------
@@ -154,8 +165,8 @@ function updateButtonStates() {
   const recChk = $('recChk');
   if (!btnS || !btnX) return;
 
-  // btnS: enabled when collecting=false and config is ready
-  btnS.disabled = S.collecting || !S.session_id;
+  // btnS: enabled when model loaded, collector connected, and not collecting
+  btnS.disabled = S.collecting || !S.component_loaded || !S.collector_connected;
   // btnX: enabled when collecting=true
   btnX.disabled = !S.collecting;
   // IQ recording checkbox: enabled when collecting
@@ -313,6 +324,9 @@ async function loadComponentSchema(componentId) {
     const schema = await api('GET', '/api/v1/components/' + componentId + '/config-schema');
     renderSchemaParams(schema);
     log('已加载组件参数 schema');
+    S.component_loaded = true;
+    updateButtonStates();
+    log('组件已加载，参数已呈现，请在观测页启动采数');
   } catch (e) {
     log('加载组件 schema 失败: ' + e.message);
   }
@@ -615,6 +629,8 @@ async function connectCollector() {
   if (aps) aps.innerHTML = '<span style="color:var(--mut)">正在连接…</span>';
   try {
     await api('POST', '/api/v1/collector/connect', { device_uri: deviceId });
+    S.collector_connected = true;
+    updateButtonStates();
     if (aps) aps.innerHTML = '<span class="ok"><i class="bi bi-check-circle"></i> 连接成功</span>';
     log('采集器已连接: ' + deviceId);
     updateStatusDot('ok', '采集器已就绪');
@@ -686,6 +702,7 @@ function init() {
   bind();
   loadComponents();
   scanDevices();
+  updateButtonStates();
 
   // Start socket connection early
   initSocket();
