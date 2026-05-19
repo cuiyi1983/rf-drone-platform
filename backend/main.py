@@ -20,6 +20,7 @@ from .api.session import inject_platform as inject_session
 from .config_manager import ConfigManager
 from .inference.framework import InferenceFramework
 from .socketio.server import SocketIOServer, PlatformNamespace
+from .collector_io_client import CollectorIOClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ class Platform:
         # 子模块
         self.config_manager = ConfigManager()
         self.socketio_server = SocketIOServer()
+        self._collector_io_client: dict[str, CollectorIOClient] = {}  # session_id → client
 
         # 会话存储
         self._sessions: dict[str, dict] = {}
@@ -180,6 +182,15 @@ class Platform:
 
         framework.start()
 
+        # 连接 Collector Socket.IO 客户端（接收 IQ 帧）
+        collector_io = CollectorIOClient(collector_url=self._collector_base_url.replace("/api/v1", ""))
+        connected = await collector_io.connect(framework, session_id)
+        if connected:
+            self._collector_io_client[session_id] = collector_io
+            logger.info(f"Platform: CollectorIOClient 已连接 (session={session_id})")
+        else:
+            logger.warning(f"Platform: CollectorIOClient 连接失败 (session={session_id})")
+
         # 保存会话
         self._sessions[session_id] = {
             "session_id": session_id,
@@ -214,6 +225,11 @@ class Platform:
         if framework:
             framework.stop()
             del self._frameworks[session_id]
+
+        # 断开 Collector Socket.IO 客户端
+        client = self._collector_io_client.pop(session_id, None)
+        if client:
+            await client.disconnect()
 
         session = self._sessions[session_id]
         session["status"] = "stopped"
