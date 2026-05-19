@@ -1,0 +1,53 @@
+name: rfuav-two-stage
+version: "1.0.0"
+description: RFUAV two-stage drone detection inference component (Stage1 YOLO + Stage2 ResNet152)
+
+component_type: inference
+author: RFUAV Team
+
+collector_requirements:
+  min_data_points: 600000   # Model requires 10ms × 60MHz = 600k IQ points
+
+io:
+  input:
+    iq_data:
+      type: complex[]
+      description: Complex IQ data array, length >= 600000
+  output:
+    detections:
+      type: list
+      description: List of detection results with model and confidence
+    debug:
+      type: dict
+      description: Debug info including inference time and stage counts
+
+config_schema:
+  confidence_threshold:
+    type: number
+    default: 0.5
+    description: Minimum confidence for detections
+  max_detections:
+    type: integer
+    default: 10
+    description: Maximum number of detections to return
+
+stage1:
+  model: stage1.onnx
+  type: yolo
+  input_size: [640, 640]
+  classes: 1  # drone vs noise
+
+stage2:
+  model: stage2.onnx
+  type: resnet152
+  input_size: [224, 224]
+  classes: 7  # 7 drone model classes
+
+class_labels:
+  - "DAUTEL EVO NANO"
+  - "DEVENTION DEVO"
+  - "DJI AVATA2"
+  - "DJI FPV COMBO"
+  - "DJI MAVIC3 PRO"
+  - "DJI MINI3.1"
+  - "DJI MINI4 PRO"
