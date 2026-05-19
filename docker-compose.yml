@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  platform:
+    image: python:3.11-slim
+    container_name: rf-drone-platform-test_platform
+    working_dir: /repo
+    volumes:
+      - .:/repo
+    ports:
+      - "5100:5100"
+      - "5101:5101"
+      - "5102:5102"
+    environment:
+      - PLATFORM_PORT=5100
+      - COLLECTOR_PORT=5101
+      - FRONTEND_PORT=5102
+    command: ["sleep", "infinity"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: bridge
+    dns: 8.8.8.8
