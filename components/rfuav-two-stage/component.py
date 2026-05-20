@@ -263,3 +263,34 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             return True
         except Exception:
             return False
+
+# ── COMPONENT_ENTRY（供 Platform 自动扫描注册）─────────────────────────────
+COMPONENT_ENTRY = {
+    "id": "rfuav-two-stage",
+    "name": "RFUAV 两阶段推理组件",
+    "version": "1.0.0",
+    "component_class": RFUAVTwoStageComponent,
+    "manifest": {
+        "component": {
+            "name": "rfuav-two-stage",
+            "component_type": "inference",
+            "author": "RFUAV Team"
+        },
+        "collector_requirements": {
+            "min_data_points": 600000
+        },
+        "io": {
+            "input": {
+                "iq_data": {"type": "complex[]", "description": "Complex IQ data array, length >= 600000"}
+            },
+            "output": {
+                "detections": {"type": "list", "description": "List of detection results with model and confidence"},
+                "debug": {"type": "dict", "description": "Debug info including inference time and stage counts"}
+            }
+        },
+        "config_schema": {
+            "confidence_threshold": {"type": "number", "default": 0.5},
+            "max_detections": {"type": "integer", "default": 10}
+        }
+    }
+}
