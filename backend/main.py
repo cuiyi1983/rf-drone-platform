@@ -5,6 +5,7 @@ FastAPI 入口 + 核心 Platform 协调器
 import asyncio
 import logging
 import uuid
+import yaml
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -70,7 +71,7 @@ class Platform:
         self._requests.headers.update({"User-Agent": "RF-Drone-Platform/1.0"})
 
         # 注册模拟组件
-        self._register_sim_components()
+        self._discover_components()
 
         # 注册模拟设备
         await self._discover_devices()
@@ -96,17 +97,98 @@ class Platform:
 
     # ── 模拟数据 ─────────────────────────────────────────────────
 
-    def _register_sim_components(self) -> None:
-        """注册内置模拟组件（与真实 .zip 组件同等对待）"""
-        from backend.components.sim_component import COMPONENT_ENTRY
-        self._components = {
-            COMPONENT_ENTRY["id"]: {
-                **COMPONENT_ENTRY["manifest"]["component"],
-                "version": COMPONENT_ENTRY["version"],
-                "type": COMPONENT_ENTRY["manifest"]["component"].get("type", "inference"),
-                **COMPONENT_ENTRY["manifest"]  # 展开 capability / collector_requirements / io / config_schema
-            }
-        }
+    def _discover_components(self) -> None:
+        """自动扫描 components/ 目录，注册所有有效组件"""
+        import sys, os, importlib.util
+        import yaml
+
+        components_base = os.path.join(os.path.dirname(__file__), '..', 'components')
+        if not os.path.isdir(components_base):
+            logger.warning(f"Platform: components/ 目录不存在 ({components_base})，跳过组件扫描")
+            self._components = {}
+            return
+
+        discovered = {}
+        # 扫描外部组件目录
+        for entry_name in os.listdir(components_base):
+            comp_dir = os.path.join(components_base, entry_name)
+            manifest_path = os.path.join(comp_dir, 'manifest.yaml')
+            component_py = os.path.join(comp_dir, 'component.py')
+            if not (os.path.isdir(comp_dir) and os.path.exists(manifest_path) and os.path.exists(component_py)):
+                continue
+
+            # sim-inference 是内置组件，走 backend.components.sim_component
+            if entry_name == 'sim-inference':
+                try:
+                    from backend.components.sim_component import COMPONENT_ENTRY as _se
+                    manifest_comp = _se['manifest'].get('component', _se['manifest'])
+                    discovered[_se['id']] = {
+                        'id': _se['id'],
+                        'name': _se.get('name', _se['id']),
+                        'version': _se.get('version', '1.0.0'),
+                        'type': manifest_comp.get('component_type', 'inference'),
+                        'config_schema': _se['manifest'].get('config_schema', {}),
+                        'collector_requirements': _se['manifest'].get('collector_requirements', {}),
+                        'io': _se['manifest'].get('io', {}),
+                        '_component_class': _se.get('component_class'),
+                    }
+                    logger.info(f"Platform: 发现内置组件 sim-inference")
+                except Exception as e:
+                    logger.error(f"Platform: 加载内置 sim-inference 失败: {e}")
+                continue
+
+            try:
+                # 加载 manifest.yaml
+                with open(manifest_path, 'r', encoding='utf-8') as f:
+                    manifest = yaml.safe_load(f)
+
+                # 动态加载 component.py
+                # 需要临时把 backend/ 的父目录加入 sys.path 以便 "from backend.xxx" 可用
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                if project_root not in sys.path:
+                    sys.path.insert(0, project_root)
+
+                if comp_dir not in sys.path:
+                    sys.path.insert(0, comp_dir)
+                spec = importlib.util.spec_from_file_location("_comp", component_py)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+
+                if not hasattr(mod, 'COMPONENT_ENTRY'):
+                    logger.warning(f"Platform: {entry_name}/component.py 未导出 COMPONENT_ENTRY，跳过")
+                    for _p in [comp_dir, project_root]:
+                        if _p in sys.path:
+                            sys.path.remove(_p)
+                    continue
+
+                entry = mod.COMPONENT_ENTRY
+                comp_id = entry['id']
+                manifest_comp = manifest.get('component', manifest)
+
+                discovered[comp_id] = {
+                    'id': comp_id,
+                    'name': entry.get('name', comp_id),
+                    'version': entry.get('version', '1.0.0'),
+                    'type': manifest_comp.get('component_type', 'inference'),
+                    'config_schema': manifest.get('config_schema', {}),
+                    'collector_requirements': manifest.get('collector_requirements', {}),
+                    'io': manifest.get('io', {}),
+                    '_component_class': entry.get('component_class'),
+                }
+                logger.info(f"Platform: 发现组件 {comp_id} (path={entry_name})")
+
+                for _p in [comp_dir, project_root]:
+                    if _p in sys.path:
+                        sys.path.remove(_p)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(
+                    f"Platform: 加载组件 {entry_name} 失败: {type(e).__name__} {e}", exc_info=True
+                )
+                continue
+
+        self._components = discovered
+        logger.info(f"Platform: 组件扫描完成，共注册 {len(discovered)} 个组件: {list(discovered.keys())}")
 
     async def _discover_devices(self) -> None:
         """从 Collector 发现设备"""
@@ -171,10 +253,12 @@ class Platform:
             error_callback=lambda err: self._on_error(session_id, err)
         )
 
-        # 组件实例：统一加载逻辑，平台不感知是 sim 组件还是真实组件
-        # TODO: 真实组件从 .zip 包加载实现后，此处统一处理
-        from backend.components.sim_component import SimComponent
-        component_instance = SimComponent()
+        # 组件实例：从已注册的组件中取 _component_class 动态实例化
+        comp_info = self._components.get(component_id, {})
+        comp_cls = comp_info.get('_component_class')
+        if not comp_cls:
+            return {"error": f"组件 {component_id} 未找到或不支持实例化", "code": 1003}
+        component_instance = comp_cls()
         device = "cpu"  # 实际通过 ONNX Runtime 检测
 
         if not framework.load_component(component_id, component_instance, config, device):

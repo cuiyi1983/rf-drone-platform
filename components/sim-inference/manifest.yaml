@@ -1,0 +1,31 @@
+name: sim-inference
+version: "1.0.0"
+description: 模拟推理组件（测试用）
+
+component_type: inference
+author: RFUAV Team
+
+collector_requirements:
+  min_data_points: 1024
+
+io:
+  input:
+    iq_data:
+      type: complex[]
+      description: Complex IQ data array
+  output:
+    detections:
+      type: list
+    debug:
+      type: dict
+
+config_schema:
+  confidence_threshold:
+    type: number
+    default: 0.5
+  noise_level:
+    type: number
+    default: 0.1
+  random_seed:
+    type: integer
+    default: 42
