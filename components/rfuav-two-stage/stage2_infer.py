@@ -5,7 +5,7 @@ Classifies cropped spectrogram regions into 7 drone model classes.
 
 import numpy as np
 import onnxruntime as ort
-from PIL import Image
+from scipy.ndimage import zoom as scipy_zoom
 
 
 # Class labels for 7 drone models
@@ -51,10 +51,14 @@ class Stage2Infer:
         Returns:
             result: dict with keys: class_id, class_name, confidence, probabilities
         """
-        # Resize to 224x224 for ResNet
-        cropped = Image.fromarray(cropped_spectrogram)
-        resized = cropped.resize(RESNET_INPUT_SIZE, Image.BILINEAR)
-        input_data = np.asarray(resized, dtype=np.float32)
+        # Resize to 224x224 using scipy (PIL not available in all environments)
+        # cropped_spectrogram is 2D uint8 (H, W)
+        h, w = cropped_spectrogram.shape
+        target_h, target_w = RESNET_INPUT_SIZE
+        zoom_h = target_h / h
+        zoom_w = target_w / w
+        resized = scipy_zoom(cropped_spectrogram.astype(np.float32), (zoom_h, zoom_w), order=1)
+        input_data = resized.astype(np.uint8)
 
         # Handle grayscale (2D) or color (3D) images
         if input_data.ndim == 2:
