@@ -209,6 +209,7 @@ class CollectorAPI:
 
             try:
                 self._start_socketio_once("0.0.0.0", 5101)
+                self._start_tcp_server_once()
                 session_id = self._collector.start(mode=actual_mode, config=config)
                 return _json(0, "采集已开始", session_id=session_id)
             except RuntimeError as e:

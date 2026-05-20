@@ -710,6 +710,10 @@ function bind() {
       fp.title = fi.files[0].path || fi.files[0].name;
     }
   });
+
+  // Control buttons
+  $('btnS').addEventListener('click', startSession);
+  $('btnX').addEventListener('click', stopSession);
 }
 
 // ---- Init --------------------------------------------------------
