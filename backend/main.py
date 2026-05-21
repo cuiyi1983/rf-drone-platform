@@ -270,7 +270,21 @@ class Platform:
         collector_host = self._collector_base_url.replace("http://", "").split(":")[0] or "localhost"
 
         # 启动采集（通知 Collector 开始）— 必须先于 TCP 连接，确保 Collector 侧 TCP server 已就绪
-        conn_result = await self._collector_start(session_id, merged_config)
+        conn_result = await self._collector_start(session_id, {**merged_config, **config})
+        if conn_result.get("status") != "success":
+            return {"error": f"Collector 启动失败: {conn_result.get('detail', 'Unknown error')}", "code": 1004}
+
+        # 保存会话（collector 启动成功后才创建）
+        self._sessions[session_id] = {
+            "session_id": session_id,
+            "collector_session_id": conn_result.get("collector_session_id", session_id),
+            "status": "running",
+            "component_id": component_id,
+            "current_config": {**merged_config, **config},
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "warnings": warnings,
+            "device_info": self._get_device_info()
+        }
 
         # 再建立 TCP 数据通道
         collector_io = CollectorIOClient(collector_host=collector_host, collector_port=6103)
@@ -280,17 +294,6 @@ class Platform:
             logger.info(f"Platform: CollectorIOClient 已连接 (session={session_id})")
         else:
             logger.warning(f"Platform: CollectorIOClient 连接失败 (session={session_id})")
-
-        # 保存会话
-        self._sessions[session_id] = {
-            "session_id": session_id,
-            "status": "running",
-            "component_id": component_id,
-            "current_config": {**merged_config, **config},
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "warnings": warnings,
-            "device_info": self._get_device_info()
-        }
 
         self._frameworks[session_id] = framework
         self._inference_history[session_id] = []
@@ -308,10 +311,11 @@ class Platform:
         if session_id not in self._sessions:
             return {"error": "会话不存在", "code": 1003}
 
-        framework = self._frameworks.get(session_id)
+        # 先从 _frameworks 取出 framework，再获取 stats（顺序重要）
+        framework = self._frameworks.pop(session_id, None)
+        stats = framework.get_stats() if framework else {}
         if framework:
             framework.stop()
-            del self._frameworks[session_id]
 
         # 断开 Collector Socket.IO 客户端
         client = self._collector_io_client.pop(session_id, None)
@@ -322,7 +326,6 @@ class Platform:
         session["status"] = "stopped"
         session["stopped_at"] = datetime.now(timezone.utc).isoformat()
 
-        stats = framework.get_stats() if framework else {}
         await self._collector_stop(session_id)
 
         return {
@@ -431,7 +434,9 @@ class Platform:
     async def get_component_detail(self, component_id: str) -> dict:
         if component_id not in self._components:
             return {"error": "组件不存在", "code": 1001}
-        return self._components[component_id].copy()
+        comp = self._components[component_id].copy()
+        comp.pop("_component_class", None)  # 移除不可序列化的类对象
+        return comp
 
     async def get_component_config_schema(self, component_id: str) -> dict:
         if component_id not in self._components:
@@ -479,13 +484,41 @@ class Platform:
             resp = await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/start", json={
                 "session_id": session_id,
                 "mode": collector_mode,
-                "config": config
+                "config": config,
+                "force": True
             }, timeout=10)
+
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("code") == 0:
-                    return {"status": "success"}
+                    # 提取 Collector 分配的 session_id（UUID）
+                    collector_session_id = data.get("session_id", session_id)
+                    return {"status": "success", "collector_session_id": collector_session_id}
                 return {"status": "failed", "detail": data.get("message", "Unknown error")}
+            if resp.status_code == 409:
+                # 冲突：先 reset 再重试
+                logger.warning(f"Collector start conflict (409) for session {session_id}, attempting reset...")
+                try:
+                    await asyncio.to_thread(
+                        self._requests.post,
+                        f"{self._collector_base_url}/api/v1/collector/reset",
+                        timeout=5
+                    )
+                except Exception as reset_err:
+                    logger.warning(f"Collector reset call failed: {reset_err}")
+                # 重试 start
+                resp = await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/start", json={
+                    "session_id": session_id,
+                    "mode": collector_mode,
+                    "config": config,
+                    "force": True
+                }, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == 0:
+                        collector_session_id = data.get("session_id", session_id)
+                        return {"status": "success", "collector_session_id": collector_session_id}
+                    return {"status": "failed", "detail": data.get("message", "Unknown error")}
             return {"status": "failed", "detail": f"HTTP {resp.status_code}: {resp.text[:100]}"}
         except Exception as e:
             return {"status": "failed", "detail": f"{type(e).__name__}: {e}"}
@@ -493,7 +526,9 @@ class Platform:
     async def _collector_stop(self, session_id: str) -> None:
         """通知 Collector 停止采集"""
         try:
-            await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/stop", json={"session_id": session_id}, timeout=10)
+            # 必须用 Collector 分配的 session_id（UUID），不能用 Platform 的 sess_xxx
+            collector_session_id = self._sessions.get(session_id, {}).get("collector_session_id", session_id)
+            await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/stop", json={"session_id": collector_session_id}, timeout=10)
         except Exception as e:
             logger.warning(f"Collector stop failed: {e}")
 

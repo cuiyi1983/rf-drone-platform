@@ -172,6 +172,7 @@ class CollectorAPI:
             """
             body = request.get_json(force=True) or {}
             mode = body.get("mode", "pluto")
+            force = body.get("force", False)
             if mode not in ("pluto", "simulator", "repeater"):
                 return _json(400, f"Invalid mode: {mode}")
 
@@ -192,6 +193,7 @@ class CollectorAPI:
                 gain=float(raw_config.get("gain", 20.0)),
                 hop_interval_ms=int(raw_config.get("hop_interval_ms", 100)),
                 iq_file_path=iq_file_path,
+                loop_play=bool(raw_config.get("loop_play", False)),
             )
 
             # If mode is "repeater", treat as simulator internally and pre-load the IQ file
@@ -201,6 +203,7 @@ class CollectorAPI:
                     return _json(400, "iq_file_path required for repeater mode")
                 try:
                     self._simulator.load(iq_file_path)
+                    self._collector.set_iq_file_path(iq_file_path)
                     logger.info(f"Collector: IQ file loaded for repeater mode: {iq_file_path}")
                 except Exception as e:
                     logger.error(f"IQ file load failed: {e}")
@@ -210,7 +213,7 @@ class CollectorAPI:
             try:
                 self._start_socketio_once("0.0.0.0", 5101)
                 self._start_tcp_server_once()
-                session_id = self._collector.start(mode=actual_mode, config=config)
+                session_id = self._collector.start(mode=actual_mode, config=config, force=force)
                 return _json(0, "采集已开始", session_id=session_id)
             except RuntimeError as e:
                 logger.error("start failed: %s", e)
@@ -263,8 +266,8 @@ class CollectorAPI:
                 mock_devs = [
                     {"id": "sim:pluto_2.6.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
                     {"id": "sim:pluto_2.10.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
-                    {"id": "file:iq_recording.bin", "type": "pluto-repeater", "name": "Pluto-Repayer (IQ File)", "connected": True, "fw_version": "v0.34", "capabilities": {"iq_file_supported": True, "default_iq_dir": "/repo/IQ-Record"}},
                 ]
+                # Note: pluto-repeater is now returned by collector.get_devices() when IQ file is configured
                 logger.info("Collector: 返回 mock 设备列表")
                 return {"code": 0, "message": "ok", "devices": mock_devs}, 200
             logger.info("Collector: 调用 self._collector.get_devices()")
@@ -330,6 +333,18 @@ class CollectorAPI:
             return _json(0, "配置已更新")
 
         # Health check endpoint
+        @app.route("/api/v1/collector/reset", methods=["POST"])
+        def reset_collector():
+            """
+            POST /api/v1/collector/reset
+
+            Reset collector state (call after restart to clear stale state).
+            Returns: { code, message }
+            """
+            if self._collector is not None:
+                self._collector.force_reset()
+            return _json(0, "Collector reset")
+
         @app.route("/api/v1/collector/health", methods=["GET"])
         def health():
             return {"code": 0, "message": "ok"}, 200
