@@ -37,6 +37,7 @@ class CollectorConfig:
     gain: float = 20.0
     hop_interval_ms: int = 100
     iq_file_path: Optional[str] = None  # IQ file path (for repeater mode)
+    loop_play: bool = False              # Loop IQ file playback
 
 
 @dataclass
@@ -110,6 +111,16 @@ class Collector:
         self._start_time: Optional[float] = None
         # Device info snapshot
         self._device_info: Optional[dict] = None
+        # Persisted IQ file path for pluto-repeater device listing
+        self._iq_file_path: Optional[str] = None
+
+    # ------------------------------------------------------------------
+    # IQ File path tracking (for pluto-repeater device listing)
+    # ------------------------------------------------------------------
+    def set_iq_file_path(self, iq_file_path: str) -> None:
+        """Set the IQ file path so pluto-repeater appears in get_devices()."""
+        self._iq_file_path = iq_file_path
+        logger.info(f"Collector: IQ file path set for device listing: {iq_file_path}")
 
     # ------------------------------------------------------------------
     # Device connection management
@@ -218,22 +229,26 @@ class Collector:
     # ------------------------------------------------------------------
     # Public API (matches collector-api.yaml)
     # ------------------------------------------------------------------
-    def start(self, mode: str, config: CollectorConfig) -> str:
+    def start(self, mode: str, config: CollectorConfig, force: bool = False) -> str:
         """
         Start acquisition.
 
         Args:
             mode: "pluto" or "simulator"
             config: CollectorConfig with frequencies / buffer_size / gain / etc.
+            force: if True and already running, force-reset before starting.
 
         Returns:
             session_id (UUID string).
 
         Raises:
-            RuntimeError: if already running
+            RuntimeError: if already running (unless force=True)
         """
         if self._state == CollectorState.RUNNING:
-            raise RuntimeError("Collector already running")
+            if force:
+                self.force_reset()
+            else:
+                raise RuntimeError("Collector already running")
 
         self._session_id = str(uuid.uuid4())
         self._mode = mode
@@ -291,6 +306,25 @@ class Collector:
         self._thread = threading.Thread(target=self._run_loop, name="collector-loop", daemon=True)
         self._thread.start()
         return self._session_id
+
+    def force_reset(self) -> None:
+        """Force reset collector state without session_id check. Used to clear stuck state."""
+        logger.info("Force resetting collector")
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=3.0)
+            self._thread = None
+        if self._device:
+            try:
+                self._device.disconnect()
+            except Exception as e:
+                logger.warning("Device disconnect error during force_reset: %s", e)
+            self._device = None
+        self._simulator = None
+        self._state = CollectorState.IDLE
+        self._session_id = None
+        self._stop_event.clear()
+        logger.info("Force reset complete")
 
     def stop(self, session_id: str) -> SessionStats:
         """
@@ -361,7 +395,7 @@ class Collector:
         logger.info("Collector: 触发扫描，来源=get_devices()")
         try:
             infos = discover_devices()
-            return [
+            devices = [
                 {
                     "id": d.id,
                     "type": d.type,
@@ -371,6 +405,21 @@ class Collector:
                 }
                 for d in infos
             ]
+            # If simulator has IQ file loaded OR _iq_file_path is set, include pluto-repeater
+            simulator_has_file = (
+                self._simulator is not None and hasattr(self._simulator, 'is_loaded')
+                and self._simulator.is_loaded()
+            )
+            if simulator_has_file or self._iq_file_path:
+                devices.append({
+                    "id": "file:iq_recording.bin",
+                    "type": "pluto-repeater",
+                    "name": "Pluto-Repeater (IQ File)",
+                    "connected": True,
+                    "fw_version": "v0.34",
+                    "capabilities": {"iq_file_supported": True, "default_iq_dir": "/repo/IQ-Record"},
+                })
+            return devices
         except Exception as e:
             logger.error("Device discovery failed: %s", e)
             return []
@@ -446,6 +495,11 @@ class Collector:
                 logger.warning("Incomplete IQ sample count %d, skipping frame", raw.size)
                 continue
             iq_data = raw[0::2] + 1j * raw[1::2]
+
+            # ---- Non-looping: stop when file is exhausted ----
+            if not config.loop_play and iq_data.size == 0:
+                logger.info("IQ file playback complete (loop_play=False)")
+                break
 
             # ---- Build frame dict (to match collector-api.yaml schema) ----
             frame = IQFrame(
