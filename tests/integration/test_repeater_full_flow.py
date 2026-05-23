@@ -23,6 +23,9 @@ import time
 import sys
 import os
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from utils.assertions import assert_start_session_response
+
 # ── 常量 ────────────────────────────────────────────────────────
 PLATFORM_URL = "http://localhost:5100"
 
@@ -254,6 +257,16 @@ class TestRepeaterFullFlow:
         assert data.get("session_id"), f"session_id not in response: {data}"
         assert data.get("status") in ("running", "started"), \
             f"unexpected status: {data.get('status')}"
+
+        # ── TC-INV-01: config 字段完整性验证 ──────────────────
+        # 前端 updateConfigDisplay() 依赖这些字段，缺一不可
+        cfg = assert_start_session_response(data, component_id="sim-inference")
+
+        # 验证 repeater 模式特有的 iq_file_path
+        iq_file = cfg["collector_config"].get("iq_file_path")
+        assert iq_file is not None, \
+            f"collector_config.iq_file_path 为 None，repeater 模式配置丢失"
+        print(f"[TC-006] iq_file_path: {iq_file}")
 
         session_id = data.get("session_id")
         print(f"[TC-006] PASS - repeater session started: {session_id}")
