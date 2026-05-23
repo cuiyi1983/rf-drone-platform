@@ -27,17 +27,12 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 # App factory
 # ------------------------------------------------------------------
-# Mock devices mode (set via --mock-devices CLI flag)
-_mock_devices_mode = False
 
-
-def create_app(mock_devices: bool = False) -> Flask:
-    global _mock_devices_mode
-    _mock_devices_mode = mock_devices
+def create_app() -> Flask:
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
 
-    api = CollectorAPI(mock_devices=mock_devices)
+    api = CollectorAPI()
     api.register_routes(app)
 
     return app
@@ -77,14 +72,11 @@ class CollectorAPI:
         api.register_routes(app)
     """
 
-    def __init__(self, mock_devices: bool = False):
+    def __init__(self) -> None:
         self._collector = Collector()
         self._simulator = IQSimulator()
         self._socketio_started = False
-        self._mock_devices = mock_devices
         self._tcp_server: Optional[TCPDataServer] = None
-        if mock_devices:
-            logger.info("CollectorAPI: mock_devices 模式启用")
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -261,15 +253,7 @@ class CollectorAPI:
             """
             GET /api/v1/collector/devices
             """
-            logger.info("Collector: HTTP GET /api/v1/collector/devices 被调用, mock=%s", self._mock_devices)
-            if self._mock_devices:
-                mock_devs = [
-                    {"id": "sim:pluto_2.6.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
-                    {"id": "sim:pluto_2.10.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
-                ]
-                # Note: pluto-repeater is now returned by collector.get_devices() when IQ file is configured
-                logger.info("Collector: 返回 mock 设备列表")
-                return {"code": 0, "message": "ok", "devices": mock_devs}, 200
+            logger.info("Collector: HTTP GET /api/v1/collector/devices 被调用")
             logger.info("Collector: 调用 self._collector.get_devices()")
             devs = self._collector.get_devices()
             logger.info("Collector: get_devices() 返回 %d 个设备: %s", len(devs), devs)
@@ -396,9 +380,8 @@ if __name__ == "__main__":
     )
 
     parser = argparse.ArgumentParser(description="Collector Service")
-    parser.add_argument("--mock-devices", action="store_true", help="使用模拟 Pluto 设备（用于测试）")
     parser.add_argument("--port", type=int, default=5101, help="HTTP 端口（默认 5101）")
     args = parser.parse_args()
 
-    app = create_app(mock_devices=args.mock_devices)
+    app = create_app()
     app.run(host="0.0.0.0", port=args.port, debug=False, threaded=True)

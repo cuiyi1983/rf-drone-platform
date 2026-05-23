@@ -4,7 +4,7 @@ test_webui_session_flow.py - 验证完整 WebUI 操作路径（规则 6：只调
 测试场景：
 - 选组件 → 加载 → 连接采集器 → 启动采数 → 停止
 
-本测试为 E2E 测试，需要 docker 容器环境（Platform + Collector --mock-devices）
+本测试为 E2E 测试，需要 docker 容器环境（Platform + Collector）
 
 运行方式（容器内）：
     cd /repo
@@ -35,7 +35,7 @@ def is_port_open(url, timeout=3):
 
 @pytest.fixture(scope="module")
 def all_services():
-    """启动 Platform + Collector（--mock-devices），测试结束后关闭"""
+    """启动 Platform + Collector，测试结束后关闭"""
     cwd = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     # 检查是否在容器内
@@ -48,7 +48,7 @@ def all_services():
     # 启动 Collector（如果未运行）
     if not is_port_open("http://localhost:5101"):
         collector_proc = subprocess.Popen(
-            [sys.executable, "-m", "collector.api", "--mock-devices"],
+            [sys.executable, "-m", "collector.api"],
             cwd=cwd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE

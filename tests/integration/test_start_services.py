@@ -124,7 +124,7 @@ class TestCollectorStart:
         log_file = f"{LOG_DIR}/test_collector.log"
         cmd = [
             sys.executable, "-m", "collector.api",
-            "--mock-devices", "--port", "5101"
+            "--port", "5101"
         ]
 
         # 清理端口
@@ -250,7 +250,7 @@ class TestAllServicesTogether:
 
         # 启动 Collector
         pid_col = start_service_background(
-            [sys.executable, "-m", "collector.api", "--mock-devices", "--port", "5101"],
+            [sys.executable, "-m", "collector.api", "--port", "5101"],
             log_collector
         )
         time.sleep(2)

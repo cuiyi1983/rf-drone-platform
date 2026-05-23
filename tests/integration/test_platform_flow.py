@@ -44,7 +44,7 @@ def is_port_open(url, timeout=3):
 
 @pytest.fixture(scope="module")
 def all_services():
-    """启动真实 Collector（--mock-devices）+ Platform，测试结束后关闭"""
+    """启动真实 Collector + Platform，测试结束后关闭"""
     cwd = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     # 容器内 /repo 存在才启动子进程；否则假设服务已由 start_all_services.sh 启动
@@ -54,7 +54,7 @@ def all_services():
 
         if not is_port_open(COLLECTOR_URL):
             collector_proc = subprocess.Popen(
-                [sys.executable, "-m", "collector.api", "--mock-devices", "--port", "5101"],
+                [sys.executable, "-m", "collector.api", "--port", "5101"],
                 cwd=cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -126,9 +126,8 @@ class TestPlatformFlow:
         data = resp.json()
         assert "devices" in data
         device_ids = [d["id"] for d in data["devices"]]
-        # --mock-devices 模式返回模拟设备
-        assert "sim:pluto_2.6.5" in device_ids or "file:iq_recording.bin" in device_ids, \
-            f"模拟设备未找到: {data['devices']}"
+        assert "file:iq_recording.bin" in device_ids, \
+            f"Pluto-Repeater 设备未找到: {data['devices']}"
         print(f"[PASS] devices found: {device_ids}")
 
     @pytest.mark.parametrize("component_id", ["sim-inference", "rfuav-two-stage"])
