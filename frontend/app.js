@@ -552,8 +552,9 @@ async function scanDevices() {
     } else {
       S.devices.forEach(d => {
         const o = document.createElement('option');
-        o.value = d.id;
-        o.textContent = (d.type || '?') + ' (' + (d.uri || d.id) + ')';
+        // value 设为 d.type 以便 isRepeater 判断；API 调用时查 S.devices 取真实 id
+        o.value = d.type || d.id;
+        o.textContent = (d.type || '?') + ' (' + (d.uri || d.id) + ')'; 
         sel.appendChild(o);
       });
       log('发现 ' + S.devices.length + ' 个设备');
@@ -640,11 +641,13 @@ async function connectCollector() {
   const aps = $('aps');
   if (aps) aps.innerHTML = '<span style="color:var(--mut)">正在连接…</span>';
   try {
-    await api('POST', '/api/v1/collector/connect', { device_uri: deviceId });
+    // deviceId 此时是 d.type，需查 S.devices 取真实 id 再发 API
+    const realDeviceId = S.devices.find(d => (d.type || d.id) === deviceId)?.id || deviceId;
+    await api('POST', '/api/v1/collector/connect', { device_uri: realDeviceId });
     S.collector_connected = true;
     updateButtonStates();
     if (aps) aps.innerHTML = '<span class="ok"><i class="bi bi-check-circle"></i> 连接成功</span>';
-    log('采集器已连接: ' + deviceId);
+    log('采集器已连接: ' + realDeviceId);
     updateStatusDot('ok', '采集器已就绪');
     $('crt').textContent = deviceId;
     // Show collector params after connecting
