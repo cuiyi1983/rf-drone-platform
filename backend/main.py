@@ -47,6 +47,9 @@ class Platform:
         # 推理框架实例（每个会话一个）
         self._frameworks: dict[str, InferenceFramework] = {}
 
+        # 定期 stats 推送任务（session_id → task）
+        self._stats_tasks: dict[str, asyncio.Task] = {}
+
         # 推理历史（内存缓存）
         self._inference_history: dict[str, list] = {}
 
@@ -298,6 +301,10 @@ class Platform:
         self._frameworks[session_id] = framework
         self._inference_history[session_id] = []
 
+        # 启动定期 stats 推送（每秒一次，不管有没有帧进来）
+        task = asyncio.create_task(self._run_stats_loop(session_id))
+        self._stats_tasks[session_id] = task
+
         return {
             "session_id": session_id,
             "status": "running",
@@ -310,6 +317,11 @@ class Platform:
         """停止会话"""
         if session_id not in self._sessions:
             return {"error": "会话不存在", "code": 1003}
+
+        # 停止定期 stats 推送
+        task = self._stats_tasks.pop(session_id, None)
+        if task:
+            task.cancel()
 
         # 先从 _frameworks 取出 framework，再获取 stats（顺序重要）
         framework = self._frameworks.pop(session_id, None)
@@ -560,6 +572,18 @@ class Platform:
             "session_id": session_id,
             **result
         })
+
+    async def _run_stats_loop(self, session_id: str) -> None:
+        """每秒推送一次 collector_stats，不管有没有帧进来"""
+        while True:
+            await asyncio.sleep(1.0)
+            framework = self._frameworks.get(session_id)
+            if not framework:
+                break
+            try:
+                self._on_stats(session_id, {})
+            except Exception as e:
+                logger.error(f"Platform: stats loop error for {session_id}: {e}")
 
     def _on_stats(self, session_id: str, stats: dict) -> None:
         """统计回调"""
