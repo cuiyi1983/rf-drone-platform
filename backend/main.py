@@ -53,6 +53,9 @@ class Platform:
         # 推理历史（内存缓存）
         self._inference_history: dict[str, list] = {}
 
+        # asyncio event loop（从主线程获取，供给推理线程的 run_coroutine_threadsafe 使用）
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
         # 组件注册表（mock）
         self._components: dict[str, dict] = {}
 
@@ -598,12 +601,16 @@ class Platform:
                 history[:] = history[-1000:]
 
         # 推送 Socket.IO（跨线程调度）
+        loop = self._loop
+        if loop is None:
+            logger.error("[_on_result] no event loop available")
+            return
         asyncio.run_coroutine_threadsafe(
             self.socketio_server.emit_inference_result(session_id, {
                 "session_id": session_id,
                 **result
             }),
-            asyncio.get_event_loop()
+            loop
         )
 
     async def _run_stats_loop(self, session_id: str) -> None:
@@ -635,9 +642,13 @@ class Platform:
 
     def _on_error(self, session_id: str, message: str) -> None:
         """错误回调（从框架线程调用）"""
+        loop = self._loop
+        if loop is None:
+            logger.error("[_on_error] no event loop available")
+            return
         asyncio.run_coroutine_threadsafe(
             self.socketio_server.emit_error(2001, message, session_id),
-            asyncio.get_event_loop()
+            loop
         )
 
     # ── 历史查询 ─────────────────────────────────────────────────
@@ -705,6 +716,7 @@ platform = Platform()
 
 @app.on_event("startup")
 async def startup():
+    platform._loop = asyncio.get_running_loop()
     await platform.startup(app)
     # Mount frontend static files
     import os
