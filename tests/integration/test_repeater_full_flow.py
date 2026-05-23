@@ -242,10 +242,9 @@ class TestRepeaterFullFlow:
             json={
                 "component_id": "sim-inference",
                 "config": {
-                    "cf": 5805,
-                    "sr": 60,
-                    "bw": 56,
-                    "gn": 20,
+                    "frequency": 5_805_000_000,
+                    "sample_rate": 60_000_000,
+                    "gain": 20.0,
                     "iq_file_path": IQ_FILE,
                     "loop_play": True
                 }
@@ -405,9 +404,9 @@ class TestRepeaterFullFlow:
             json={
                 "component_id": "sim-inference",
                 "config": {
-                    "cf": 5805,
-                    "sr": 60,
-                    "gn": 20,
+                    "frequency": 5805_000_000,
+                    "sample_rate": 60_000_000,
+                    "gain": 20.0,
                     "iq_file_path": IQ_FILE,
                     "loop_play": True
                 }
@@ -433,6 +432,201 @@ class TestRepeaterFullFlow:
             f"Expected frames_received > 0, got {frames_received}"
 
         print(f"[TC-010] PASS - loop verified: frames_received={frames_received}")
+
+    # ── TC-INV-05 ──────────────────────────────────────────────
+
+    def test_tc_inv05_config_field_name_mapping(self):
+        """
+        TC-INV-05: 字段名映射正确性
+
+        后端内部用 frequency/sample_rate/gain，
+        前端 updateConfigDisplay 期望 center_freq_hz/sample_rate_hz/gain_db。
+        start_session 返回值必须做字段映射。
+
+        崔老板要求：前端观测的配置信息必须正确显示
+        """
+        IQ_FILE = "/repo/IQ-Record/noise_5db_600k.bin"
+
+        resp = api_post(
+            "/api/v1/session/start",
+            json={
+                "component_id": "sim-inference",
+                "config": {
+                    # 用标准字段名（ConfigManager 认识的）
+                    "frequency": 5_805_000_000,
+                    "sample_rate": 60_000_000,
+                    "gain": 20.0,
+                    "iq_file_path": IQ_FILE,
+                    "loop_play": True,
+                }
+            }
+        )
+        assert resp.status_code == 200, f"start failed: {resp.text}"
+        data = resp.json()
+
+        cc = data["config"]["collector_config"]
+
+        # 验证字段名映射：前端读什么，这里就验证什么
+        assert "center_freq_hz" in cc, (
+            f"字段名映射缺失：后端存 frequency，前端读 center_freq_hz。"
+            f"当前 collector_config: {cc}"
+        )
+        assert "sample_rate_hz" in cc, (
+            f"字段名映射缺失：后端存 sample_rate，前端读 sample_rate_hz。"
+            f"当前 collector_config: {cc}"
+        )
+        assert "gain_db" in cc, (
+            f"字段名映射缺失：后端存 gain，前端读 gain_db。"
+            f"当前 collector_config: {cc}"
+        )
+
+        # 验证数值正确性（前端会做 /1e6 显示 MHz）
+        assert cc["center_freq_hz"] == 5_805_000_000, \
+            f"center_freq_hz 值错误: {cc['center_freq_hz']}"
+        assert cc["sample_rate_hz"] == 60_000_000, \
+            f"sample_rate_hz 值错误: {cc['sample_rate_hz']}"
+        assert cc["gain_db"] == 20.0, \
+            f"gain_db 值错误: {cc['gain_db']}"
+
+        # inference_config.component_id 必须存在（前端 #cfg-component）
+        ic = data["config"]["inference_config"]
+        assert "component_id" in ic, \
+            f"inference_config.component_id 缺失: {ic}"
+        assert ic["component_id"] == "sim-inference"
+
+        print(f"[TC-INV-05] PASS - 字段映射正确: {cc}")
+
+        session_id = data["session_id"]
+        api_post("/api/v1/session/stop", json={"session_id": session_id})
+
+    # ── TC-INV-06 ──────────────────────────────────────────────
+
+    def test_tc_inv06_repeater_config_preserved(self):
+        """
+        TC-INV-06: repeater 模式配置在 config 中完整保留
+
+        iq_file_path 和 loop_play 必须在 collector_config 中可见，
+        以便前端确认当前处于 repeater 模式。
+        """
+        IQ_FILE = "/repo/IQ-Record/noise_5db_600k.bin"
+
+        resp = api_post(
+            "/api/v1/session/start",
+            json={
+                "component_id": "sim-inference",
+                "config": {
+                    "frequency": 5_805_000_000,
+                    "sample_rate": 60_000_000,
+                    "iq_file_path": IQ_FILE,
+                    "loop_play": True,
+                }
+            }
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+
+        cc = data["config"]["collector_config"]
+
+        # iq_file_path 必须保留（repeater 模式判断依据）
+        assert "iq_file_path" in cc, \
+            f"collector_config 丢失 iq_file_path，当前: {cc}"
+        assert cc["iq_file_path"] == IQ_FILE, \
+            f"iq_file_path 值错误: {cc['iq_file_path']}"
+
+        # loop_play 应保留或映射为可识别字段
+        # （loop_play 是 internal 字段，前端不需要显示，但必须在 config 中）
+        cfg_full = data["config"]
+        # collector_config 或顶级 config 中应有 loop_play 标记
+        has_loop = cfg_full.get("loop_play") or cc.get("loop_play")
+        assert has_loop is True, \
+            f"loop_play 配置丢失，当前 config: {cfg_full}"
+
+        print(f"[TC-INV-06] PASS - repeater 配置完整保留")
+
+        session_id = data["session_id"]
+        api_post("/api/v1/session/stop", json={"session_id": session_id})
+
+    # ── TC-INV-07 ──────────────────────────────────────────────
+
+    def test_tc_inv07_stop_session_returns_stats(self):
+        """
+        TC-INV-07: stop_session 返回 stats 摘要
+
+        验证停止后返回 stats 字段（前端 session stats 面板依赖此数据）
+        """
+        resp = api_post(
+            "/api/v1/session/start",
+            json={
+                "component_id": "sim-inference",
+                "config": {"iq_file_path": "/repo/IQ-Record/noise_5db_600k.bin"}
+            }
+        )
+        assert resp.status_code == 200
+        session_id = resp.json()["session_id"]
+
+        # 等待数据积累
+        time.sleep(1)
+
+        stop_resp = api_post(
+            "/api/v1/session/stop",
+            json={"session_id": session_id}
+        )
+        assert stop_resp.status_code == 200
+        stop_data = stop_resp.json()
+
+        assert stop_data.get("status") == "stopped", \
+            f"stop status 应为 stopped: {stop_data}"
+
+        # stats 摘要必须存在（前端 session stats 面板）
+        assert "stats" in stop_data, \
+            f"stop_session 应返回 stats 摘要，当前: {stop_data}"
+        stats = stop_data["stats"]
+
+        for field in ["frames_received", "inference_count"]:
+            assert field in stats, \
+                f"stats.{field} 缺失，当前 stats: {stats}"
+
+        print(f"[TC-INV-07] PASS - stop 返回 stats: frames={stats.get('frames_received')}")
+
+    # ── TC-INV-08 ──────────────────────────────────────────────
+
+    def test_tc_inv08_consecutive_start_stop_no_residue(self):
+        """
+        TC-INV-08: 连续两次 start/stop，配置互不影响
+
+        验证第一个 session 的配置不影响第二个，
+        每次 start 都返回独立的 session_id。
+        """
+        component_ids = ["sim-inference", "rfuav-two-stage"]
+        session_ids = []
+
+        for component_id in component_ids:
+            resp = api_post(
+                "/api/v1/session/start",
+                json={
+                    "component_id": component_id,
+                    "config": {"confidence_threshold": 0.5}
+                }
+            )
+            assert resp.status_code == 200
+            sid = resp.json()["session_id"]
+            session_ids.append(sid)
+
+            # 验证 config 返回正确
+            cfg = assert_start_session_response(resp.json(), component_id=component_id)
+
+            stop_resp = api_post(
+                "/api/v1/session/stop",
+                json={"session_id": sid}
+            )
+            assert stop_resp.status_code == 200
+            assert stop_resp.json().get("status") == "stopped"
+
+        # session_id 必须全部不同
+        assert len(set(session_ids)) == len(session_ids), \
+            f"session_id 重复（状态残留）: {session_ids}"
+
+        print(f"[TC-INV-08] PASS - {len(session_ids)} 次 start/stop 无残留")
 
 
 # ── Main (直接运行) ────────────────────────────────────────────
