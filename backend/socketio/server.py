@@ -32,7 +32,7 @@ class PlatformNamespace(AsyncNamespace):
         """订阅会话"""
         session_id = data.get("session_id")
         if session_id:
-            self.enter_room(sid, f"session:{session_id}")
+            await self.enter_room(sid, f"session:{session_id}")
             logger.info(f"Socket.IO: {sid} 订阅会话 {session_id}")
         return {
             "success": True,
@@ -43,7 +43,7 @@ class PlatformNamespace(AsyncNamespace):
         """取消订阅"""
         session_id = data.get("session_id")
         if session_id:
-            self.leave_room(sid, f"session:{session_id}")
+            await self.leave_room(sid, f"session:{session_id}")
             logger.info(f"Socket.IO: {sid} 取消订阅会话 {session_id}")
         return {"success": True}
 
@@ -75,42 +75,40 @@ class SocketIOServer:
         """
         pass
 
-    def _emit(self, event: str, data: dict, room: Optional[str] = None) -> None:
+    async def _emit(self, event: str, data: dict, room: Optional[str] = None) -> None:
         """
         统一的 emit 内部实现。
         优先使用 _sio 全局 emit；fallback 到命名空间直接 emit（不依赖 _sio）。
         """
         if self._sio is not None:
-            self._sio.emit(event, data, room=room, namespace="/")
+            await self._sio.emit(event, data, room=room, namespace="/")
         elif self._namespace is not None:
             # Fallback: 直接注入到 session room，不依赖 _sio 全局句柄
             payload = dict(data)
             if room:
                 for sid in list(self._namespace.rooms("").get(room, set()) or []):
-                    async def emit_one():
-                        await self._namespace.emit(event, payload)
-                    asyncio.create_task(emit_one())
+                    asyncio.create_task(self._namespace.emit(event, payload))
             else:
                 asyncio.create_task(self._namespace.emit(event, payload))
 
-    def emit_inference_result(self, session_id: str, result: dict) -> None:
+    async def emit_inference_result(self, session_id: str, result: dict) -> None:
         """推送推理结果到会话房间"""
-        self._emit("inference_result", result, room=f"session:{session_id}")
+        await self._emit("inference_result", result, room=f"session:{session_id}")
 
-    def emit_collector_stats(self, session_id: str, stats: dict) -> None:
+    async def emit_collector_stats(self, session_id: str, stats: dict) -> None:
         """推送采集统计到会话房间"""
-        self._emit("collector_stats", stats, room=f"session:{session_id}")
+        await self._emit("collector_stats", stats, room=f"session:{session_id}")
 
-    def emit_device_status(self, event: str, device_id: str, detail: str = "") -> None:
+    async def emit_device_status(self, event: str, device_id: str, detail: str = "") -> None:
         """推送设备状态"""
-        self._emit("device_status", {
+        await self._emit("device_status", {
             "event": event,
             "device_id": device_id,
             "timestamp": self._platform_time(),
             "detail": detail
         })
 
-    def emit_error(self, code: int, message: str, session_id: Optional[str] = None) -> None:
+    async def emit_error(self, code: int, message: str, session_id: Optional[str] = None) -> None:
         """推送错误"""
         payload = {
             "code": code,
@@ -119,7 +117,7 @@ class SocketIOServer:
         }
         if session_id:
             payload["session_id"] = session_id
-        self._emit("error", payload, room=f"session:{session_id}" if session_id else None)
+        await self._emit("error", payload, room=f"session:{session_id}" if session_id else None)
 
     @staticmethod
     def _platform_time() -> float:

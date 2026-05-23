@@ -559,7 +559,7 @@ class Platform:
     # ── Socket.IO 回调 ───────────────────────────────────────────
 
     def _on_result(self, session_id: str, result: dict, qstats: Any) -> None:
-        """推理结果回调"""
+        """推理结果回调（从框架线程调用）"""
         # 保存历史
         if session_id in self._inference_history:
             history = self._inference_history[session_id]
@@ -567,11 +567,14 @@ class Platform:
             if len(history) > 1000:
                 history[:] = history[-1000:]
 
-        # 推送 Socket.IO
-        self.socketio_server.emit_inference_result(session_id, {
-            "session_id": session_id,
-            **result
-        })
+        # 推送 Socket.IO（跨线程调度）
+        asyncio.run_coroutine_threadsafe(
+            self.socketio_server.emit_inference_result(session_id, {
+                "session_id": session_id,
+                **result
+            }),
+            asyncio.get_event_loop()
+        )
 
     async def _run_stats_loop(self, session_id: str) -> None:
         """每秒推送一次 collector_stats，不管有没有帧进来"""
@@ -581,17 +584,17 @@ class Platform:
             if not framework:
                 break
             try:
-                self._on_stats(session_id, {})
+                await self._on_stats(session_id, {})
             except Exception as e:
                 logger.error(f"Platform: stats loop error for {session_id}: {e}")
 
-    def _on_stats(self, session_id: str, stats: dict) -> None:
+    async def _on_stats(self, session_id: str, stats: dict) -> None:
         """统计回调"""
         framework = self._frameworks.get(session_id)
         if not framework:
             return
         qstats = framework.get_stats()
-        self.socketio_server.emit_collector_stats(session_id, {
+        await self.socketio_server.emit_collector_stats(session_id, {
             "session_id": session_id,
             "frames_per_second": round(qstats.get("inference_count", 0) / max(1, qstats.get("frames_received", 1)), 2),
             "dropped_rate": qstats.get("dropped_rate", 0),
@@ -601,8 +604,11 @@ class Platform:
         })
 
     def _on_error(self, session_id: str, message: str) -> None:
-        """错误回调"""
-        self.socketio_server.emit_error(2001, message, session_id)
+        """错误回调（从框架线程调用）"""
+        asyncio.run_coroutine_threadsafe(
+            self.socketio_server.emit_error(2001, message, session_id),
+            asyncio.get_event_loop()
+        )
 
     # ── 历史查询 ─────────────────────────────────────────────────
 

@@ -104,3 +104,20 @@ async def update_session_config(session_id: str, request: dict) -> dict:
     if result.get("error"):
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+@router.get("/{session_id}/stats")
+async def get_session_stats(session_id: str) -> dict:
+    """
+    GET /api/v1/session/{session_id}/stats
+    获取会话统计信息
+    """
+    if _platform_ref is None:
+        raise HTTPException(status_code=500, detail="Platform not initialized")
+
+    if session_id not in _platform_ref._sessions:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    framework = _platform_ref._frameworks.get(session_id)
+    stats = framework.get_stats() if framework else {}
+    return {"session_id": session_id, **stats}
