@@ -466,8 +466,10 @@ async function startSession() {
 
     // Update collector config from current settings
     S.session_config.collector_config = S.session_config.collector_config || {};
+    // 恢复 collector-params 显示状态（与 deviceSel change 逻辑一致）
+    const isRepeaterSession = $('deviceSel').value?.includes('pluto-repeater');
     const cp = $('collector-params');
-    if (cp) cp.style.display = 'block';
+    if (cp) cp.style.display = isRepeaterSession ? 'none' : 'block';
 
     $('cst').textContent = '采集中';
 
@@ -650,9 +652,10 @@ async function connectCollector() {
     log('采集器已连接: ' + realDeviceId);
     updateStatusDot('ok', '采集器已就绪');
     $('crt').textContent = deviceId;
-    // Show collector params after connecting
+    // Show collector params after connecting（与 deviceSel change 逻辑一致）
+    const isRepeaterConn = deviceId.includes('pluto-repeater');
     const cp = $('collector-params');
-    if (cp) cp.style.display = 'block';
+    if (cp) cp.style.display = isRepeaterConn ? 'none' : 'block';
   } catch (e) {
     if (aps) aps.innerHTML = '<span class="err"><i class="bi bi-x-circle"></i> ' + e.message + '</span>';
     log('连接失败: ' + e.message);
