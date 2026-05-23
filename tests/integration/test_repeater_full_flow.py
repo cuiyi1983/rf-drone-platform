@@ -413,13 +413,13 @@ class TestRepeaterFullFlow:
             json={"session_id": session_id}
         )
         stats = stop_resp.json().get("stats", {})
-        total_frames = stats.get("total_frames", 0)
+        frames_received = stats.get("frames_received", 0)
 
         # 有帧数据证明循环播放正常
-        assert total_frames > 0, \
-            f"Expected total_frames > 0, got {total_frames}"
+        assert frames_received > 0, \
+            f"Expected frames_received > 0, got {frames_received}"
 
-        print(f"[TC-010] PASS - loop verified: total_frames={total_frames}")
+        print(f"[TC-010] PASS - loop verified: frames_received={frames_received}")
 
 
 # ── Main (直接运行) ────────────────────────────────────────────
