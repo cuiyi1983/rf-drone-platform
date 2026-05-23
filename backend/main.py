@@ -406,10 +406,16 @@ class Platform:
             if k not in inference_config and "default" in schema:
                 inference_config[k] = schema["default"]
 
-        # 采集器配置
+        # 采集器配置（字段名映射：内部名 → 前端期望名）
         collector_config = {
-            k: v for k, v in user_config.items()
-            if k not in component.get("config_schema", {})
+            "center_freq_hz": user_config.get("frequency"),
+            "sample_rate_hz": user_config.get("sample_rate"),
+            "gain_db": user_config.get("gain"),
+            "bandwidth_hz": user_config.get("bandwidth") or user_config.get("buffer_size"),
+            "uri": user_config.get("uri"),
+            **{k: v for k, v in user_config.items()
+               if k not in ("frequency", "sample_rate", "gain", "bandwidth", "buffer_size", "uri")
+               and k not in component.get("config_schema", {})},
         }
 
         # 设备信息
@@ -618,7 +624,7 @@ class Platform:
         if not framework:
             return
         qstats = framework.get_stats()
-        self.socketio_server.emit_collector_stats(session_id, {
+        await self.socketio_server.emit_collector_stats(session_id, {
             "session_id": session_id,
             "frames_per_second": round(qstats.get("inference_count", 0) / max(1, qstats.get("frames_received", 1)), 2),
             "dropped_rate": qstats.get("dropped_rate", 0),
