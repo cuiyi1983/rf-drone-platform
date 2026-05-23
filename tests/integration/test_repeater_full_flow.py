@@ -174,7 +174,7 @@ class TestRepeaterFullFlow:
         if not repeater_dev:
             pytest.skip("pluto-repeater device not found")
 
-        IQ_FILE = "/repo/IQ-Record/noise_5db_600k.bin"
+        IQ_FILE = "IQ-Record/noise_5db_600k.bin"
         resp = api_post(
             "/api/v1/collector/apply_component_config",
             json={
@@ -235,7 +235,7 @@ class TestRepeaterFullFlow:
         - config 中带 iq_file_path（触发 repeater 模式）
         返回 session_id 且 status=running
         """
-        IQ_FILE = "/repo/IQ-Record/noise_5db_600k.bin"
+        IQ_FILE = "IQ-Record/noise_5db_600k.bin"
 
         resp = api_post(
             "/api/v1/session/start",
@@ -397,7 +397,7 @@ class TestRepeaterFullFlow:
         通过会话 stats 验证 total_frames 持续增长
         注意：本测试依赖真实 IQ 文件存在，容器环境跳过
         """
-        IQ_FILE = "/repo/IQ-Record/noise_5db_600k.bin"
+        IQ_FILE = "IQ-Record/noise_5db_600k.bin"
 
         resp = api_post(
             "/api/v1/session/start",
@@ -445,7 +445,7 @@ class TestRepeaterFullFlow:
 
         崔老板要求：前端观测的配置信息必须正确显示
         """
-        IQ_FILE = "/repo/IQ-Record/noise_5db_600k.bin"
+        IQ_FILE = "IQ-Record/noise_5db_600k.bin"
 
         resp = api_post(
             "/api/v1/session/start",
@@ -508,7 +508,7 @@ class TestRepeaterFullFlow:
         iq_file_path 和 loop_play 必须在 collector_config 中可见，
         以便前端确认当前处于 repeater 模式。
         """
-        IQ_FILE = "/repo/IQ-Record/noise_5db_600k.bin"
+        IQ_FILE = "IQ-Record/noise_5db_600k.bin"
 
         resp = api_post(
             "/api/v1/session/start",
@@ -558,7 +558,7 @@ class TestRepeaterFullFlow:
             "/api/v1/session/start",
             json={
                 "component_id": "sim-inference",
-                "config": {"iq_file_path": "/repo/IQ-Record/noise_5db_600k.bin"}
+                "config": {"iq_file_path": "IQ-Record/noise_5db_600k.bin"}
             }
         )
         assert resp.status_code == 200
