@@ -395,34 +395,30 @@ class Collector:
         logger.info("Collector: 触发扫描，来源=get_devices()")
         try:
             infos = discover_devices()
-            devices = [
-                {
-                    "id": d.id,
-                    "type": d.type,
-                    "name": d.name,
-                    "connected": d.connected,
-                    "fw_version": d.fw_version,
-                }
-                for d in infos
-            ]
-            # If simulator has IQ file loaded OR _iq_file_path is set, include pluto-repeater
-            simulator_has_file = (
-                self._simulator is not None and hasattr(self._simulator, 'is_loaded')
-                and self._simulator.is_loaded()
-            )
-            if simulator_has_file or self._iq_file_path:
-                devices.append({
-                    "id": "file:iq_recording.bin",
-                    "type": "pluto-repeater",
-                    "name": "Pluto-Repeater (IQ File)",
-                    "connected": True,
-                    "fw_version": "v0.34",
-                    "capabilities": {"iq_file_supported": True, "default_iq_dir": "/repo/IQ-Record"},
-                })
-            return devices
         except Exception as e:
             logger.error("Device discovery failed: %s", e)
-            return []
+            infos = []
+        devices = [
+            {
+                "id": d.id,
+                "type": d.type,
+                "name": d.name,
+                "connected": d.connected,
+                "fw_version": d.fw_version,
+            }
+            for d in infos
+        ]
+        # Always include pluto-repeater as a selectable device type.
+        # pluto-repeater is always listed regardless of hardware scan result.
+        devices.append({
+            "id": "file:iq_recording.bin",
+            "type": "pluto-repeater",
+            "name": "Pluto-Repeater (IQ File)",
+            "connected": True,
+            "fw_version": "v0.34",
+            "capabilities": {"iq_file_supported": True, "default_iq_dir": "/repo/IQ-Record"},
+        })
+        return devices
 
     def get_capabilities(self) -> dict:
         """Return hardware capabilities (matches /collector/discover)."""
