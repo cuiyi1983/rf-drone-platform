@@ -703,6 +703,11 @@ function bind() {
     if (rp) rp.style.display = isRepeater ? 'block' : 'none';
     const cp = $('collector-params');
     if (cp) cp.style.display = isRepeater ? 'none' : 'block';
+    // Repeater 模式：默认填充第一个可用 IQ 文件
+    if (isRepeater) {
+      const fp = $('iqFilePath');
+      if (fp && !fp.value) fp.value = 'IQ-Record/noise_5db_600k.bin';
+    }
     loadDeviceCapabilities($('deviceSel').value);
   });
 
@@ -721,7 +726,7 @@ function bind() {
     const fp = $('iqFilePath');
     const fi = $('iqFileInput');
     if (fp && fi?.files?.[0]) {
-      fp.value = fi.files[0].name;
+      fp.value = 'IQ-Record/' + fi.files[0].name;
       fp.title = fi.files[0].path || fi.files[0].name;
     }
   });
