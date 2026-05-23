@@ -279,18 +279,16 @@ function updateConfigDisplay(cfg) {
   if (cfg.inference_config) {
     const ic = cfg.inference_config;
     $('cfg-component').textContent = ic.component_id || '--';
-    $('cfg-freq').textContent = ic.center_freq_hz ? (ic.center_freq_hz / 1e6).toFixed(1) + ' MHz' : '--';
-    $('cfg-sr').textContent = ic.sample_rate_hz ? (ic.sample_rate_hz / 1e6).toFixed(0) + ' MHz' : '--';
   }
   // Collector config
   if (cfg.collector_config) {
     const cc = cfg.collector_config;
-    $('cfg-device').textContent = cc.uri || '--';
+    $('cfg-device').textContent = cc.uri || cc.device_uri || '--';
     $('cfg-freq').textContent = cc.center_freq_hz ? (cc.center_freq_hz / 1e6).toFixed(1) + ' MHz' : '--';
-    $('cfg-sr').textContent = cc.sample_rate_rate_hz ? (cc.sample_rate_hz / 1e6).toFixed(0) + ' MHz' : '--';
+    $('cfg-sr').textContent = cc.sample_rate_hz ? (cc.sample_rate_hz / 1e6).toFixed(0) + ' MHz' : '--';
     $('cfg-gain').textContent = cc.gain_db ? cc.gain_db + ' dB' : '--';
     $('cfg-bw').textContent = cc.bandwidth_hz ? (cc.bandwidth_hz / 1e6).toFixed(0) + ' MHz' : '--';
-    $('crt').textContent = cc.uri || '--';
+    $('crt').textContent = cc.uri || cc.device_uri || '--';
   }
 }
 

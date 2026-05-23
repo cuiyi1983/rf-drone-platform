@@ -305,9 +305,29 @@ class Platform:
         task = asyncio.create_task(self._run_stats_loop(session_id))
         self._stats_tasks[session_id] = task
 
+        # 构建 config 响应结构（与前端 updateConfigDisplay 期望一致）
+        current_cfg = self._sessions[session_id]["current_config"]
+        cfg_schema = component.get("config_schema", {})
+        inference_config = {
+            "component_id": component_id,
+            **{k: v for k, v in current_cfg.items() if k in cfg_schema}
+        }
+        collector_config = {
+            "center_freq_hz": current_cfg.get("frequency"),
+            "sample_rate_hz": current_cfg.get("sample_rate"),
+            "gain_db": current_cfg.get("gain"),
+            "bandwidth_hz": current_cfg.get("bandwidth") or current_cfg.get("buffer_size"),
+            "uri": current_cfg.get("uri"),
+            **{k: v for k, v in current_cfg.items() if k not in cfg_schema and k not in ("frequency", "sample_rate", "gain", "bandwidth", "buffer_size", "uri")}
+        }
         return {
             "session_id": session_id,
             "status": "running",
+            "config": {
+                "component_id": component_id,
+                "inference_config": inference_config,
+                "collector_config": collector_config,
+            },
             "warnings": warnings,
             "collector_connection": conn_result["status"],
             **({"collector_error": conn_result["detail"]} if conn_result["status"] == "failed" else {})
