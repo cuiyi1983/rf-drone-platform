@@ -593,6 +593,13 @@ async function applyCollectorParams() {
     setTimeout(() => { if (aps) aps.innerHTML = ''; }, 3000);
     return;
   }
+  // Repeater 模式下跳过 Pluto 参数发送
+  if (deviceId.includes('pluto-repeater')) {
+    const aps = $('aps');
+    if (aps) aps.innerHTML = '<span class="ok"><i class="bi bi-check-circle"></i> Repeater 模式无需 Pluto 参数</span>';
+    log('Repeater 模式：跳过 Pluto 参数发送');
+    return;
+  }
   const aps = $('aps');
   if (aps) aps.innerHTML = '<span style="color:var(--mut)">应用配置中…</span>';
   try {
@@ -688,6 +695,8 @@ function bind() {
     const isRepeater = $('deviceSel').value && $('deviceSel').value.includes('pluto-repeater');
     const rp = $('repeater-panel');
     if (rp) rp.style.display = isRepeater ? 'block' : 'none';
+    const cp = $('collector-params');
+    if (cp) cp.style.display = isRepeater ? 'none' : 'block';
     loadDeviceCapabilities($('deviceSel').value);
   });
 
