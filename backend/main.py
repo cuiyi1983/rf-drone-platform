@@ -618,7 +618,7 @@ class Platform:
         if not framework:
             return
         qstats = framework.get_stats()
-        await self.socketio_server.emit_collector_stats(session_id, {
+        self.socketio_server.emit_collector_stats(session_id, {
             "session_id": session_id,
             "frames_per_second": round(qstats.get("inference_count", 0) / max(1, qstats.get("frames_received", 1)), 2),
             "dropped_rate": qstats.get("dropped_rate", 0),
