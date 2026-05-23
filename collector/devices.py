@@ -349,6 +349,14 @@ def discover_devices() -> list[DeviceInfo]:
         return []
 
 
-def connect_device(uri: str) -> IDevice:
-    """Connect to a Pluto device by URI."""
-    return get_device_class().connect(uri)
+def connect_device(uri: str) -> Optional[IDevice]:
+    """Connect to a Pluto device by URI.
+    
+    For file:// URIs (pluto-repeater mode), no real hardware connection is needed.
+    The IQ file is loaded by IQSimulator during collector start(mode='repeater').
+    """
+    uri_str = str(uri) if uri is not None else ""
+    if uri_str.startswith("file:"):
+        logger.info("connect_device: file:// URI %s — no hardware connection needed", uri_str)
+        return None
+    return get_device_class().connect(uri_str)

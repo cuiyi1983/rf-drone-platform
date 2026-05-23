@@ -152,6 +152,21 @@ class Collector:
 
         try:
             self._device = connect_device(uri)
+            # file:// URIs (pluto-repeater) return None — no hardware needed
+            if self._device is None:
+                self._device_info = {
+                    "uri": uri,
+                    "connected": True,
+                    "temperature": None,
+                }
+                return {
+                    "uri": uri,
+                    "type": "pluto-repeater",
+                    "name": "Pluto-Repeater (IQ File)",
+                    "connected": True,
+                    "fw_version": "v0.34",
+                    "temperature": None,
+                }
             self._device_info = {
                 "uri": uri,
                 "connected": True,
@@ -277,9 +292,9 @@ class Collector:
             # Auto-connect if device not yet connected
             if self._device is None:
                 if config.device_uri:
-                    uri = config.device_uri
+                    uri = str(config.device_uri)
                 elif len(config.frequencies) > 0:
-                    uri = config.frequencies[0]  # URI encoded as first freq (temporary)
+                    uri = str(config.frequencies[0])  # URI encoded as first freq (temporary)
                 else:
                     uri = "usb:2.6.5"
                 try:
