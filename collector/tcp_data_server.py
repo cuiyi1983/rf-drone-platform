@@ -47,6 +47,12 @@ class TCPDataServer:
         self._clients: list[socket.socket] = []
         self._clients_lock = threading.Lock()
         self._stop_event = threading.Event()
+        # 发送统计
+        self._total_bytes_sent: int = 0
+        self._total_frames_sent: int = 0
+        self._last_stats_time: float = time.monotonic()
+        self._last_stats_bytes: int = 0
+        self._last_stats_frames: int = 0
 
     def start(self) -> None:
         """启动 TCP 数据服务器（后台线程）"""
@@ -105,6 +111,7 @@ class TCPDataServer:
         # 打包帧头
         header = struct.pack(_FRAME_HEADER_FMT, frame_id, timestamp, data_len)
         packet = header + raw_bytes
+        packet_len = len(packet)
 
         clients_to_remove = []
         with self._clients_lock:
@@ -121,6 +128,28 @@ class TCPDataServer:
                 client.close()
             except Exception:
                 pass
+
+        # 统计
+        self._total_bytes_sent += packet_len
+        self._total_frames_sent += 1
+
+        # 每 10 秒打印一次统计
+        now = time.monotonic()
+        elapsed = now - self._last_stats_time
+        if elapsed >= 10.0:
+            bytes_delta = self._total_bytes_sent - self._last_stats_bytes
+            frames_delta = self._total_frames_sent - self._last_stats_frames
+            mbps = (bytes_delta / elapsed) / 1_048_576 if elapsed > 0 else 0
+            fps = frames_delta / elapsed if elapsed > 0 else 0
+            logger.info(
+                f"[TCPDataServer 发送统计] 耗时 {elapsed:.1f}s | "
+                f"发送 {frames_delta} 帧 ({fps:.1f} fps) | "
+                f"{bytes_delta/1_048_576:.2f} MB ({mbps:.2f} MB/s) | "
+                f"累计 {self._total_frames_sent} 帧 {self._total_bytes_sent/1_048_576:.2f} MB"
+            )
+            self._last_stats_time = now
+            self._last_stats_bytes = self._total_bytes_sent
+            self._last_stats_frames = self._total_frames_sent
 
     def _run(self) -> None:
         """后台线程：接受客户端连接"""
