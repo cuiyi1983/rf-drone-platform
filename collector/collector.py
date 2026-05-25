@@ -281,11 +281,8 @@ class Collector:
             self._device = None
             iq_file = config.iq_file_path if hasattr(config, 'iq_file_path') else None
             if iq_file:
-                try:
-                    self._simulator.load(iq_file)
-                    logger.info(f"Collector: IQ file pre-loaded from config: {iq_file}")
-                except Exception as e:
-                    logger.warning(f"IQ file pre-load failed (may already be loaded by API): {e}")
+                self._simulator.load(iq_file)
+                logger.info(f"Collector: IQ file loaded from config: {iq_file}")
             logger.info("Collector session %s started in SIMULATOR mode", self._session_id)
         else:
             # mode == "pluto"
@@ -469,6 +466,15 @@ class Collector:
     # ------------------------------------------------------------------
     def _run_loop(self) -> None:
         """Background thread: reads IQ frames from device or simulator."""
+        logger.info(f"[Collector] _run_loop started (simulator={simulator is not None}, iq_file={getattr(config, 'iq_file_path', None)})")
+
+        # 检查 simulator 是否已加载数据（文件不存在时 _data 为 None）
+        if simulator is not None and not simulator.is_loaded():
+            logger.error("[Collector] simulator 未加载 IQ 数据（文件不存在或加载失败），_run_loop 退出")
+            return
+
+        loop_count = 0
+
         session_id = self._session_id
         config = self._config
         device = self._device
@@ -529,6 +535,9 @@ class Collector:
 
             self._stats.total_frames += 1
             self._emit_frame(frame)
+            loop_count += 1
+            if loop_count % 200 == 0:
+                logger.info(f"[Collector] _run_loop 运行中，已 emit {self._stats.total_frames} 帧")
 
             # Throttle: sleep just enough to avoid busy-spinning.
             # Real Pluto rx() is blocking; simulator needs a small sleep.
