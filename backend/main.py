@@ -311,6 +311,9 @@ class Platform:
         # 构建 config 响应结构（与前端 updateConfigDisplay 期望一致）
         current_cfg = self._sessions[session_id]["current_config"]
         cfg_schema = component.get("config_schema", {})
+        # pluto-repeater 模式下 uri 取 device_id（固定为 "pluto-repeater"），否则从 config 取
+        collector_type = current_cfg.get("collector_type", "")
+        _uri = current_cfg.get("uri") or ("pluto-repeater" if collector_type == "pluto-repeater" else None)
         inference_config = {
             "component_id": component_id,
             **{k: v for k, v in current_cfg.items() if k in cfg_schema}
@@ -320,7 +323,7 @@ class Platform:
             "sample_rate_hz": current_cfg.get("sample_rate"),
             "gain_db": current_cfg.get("gain"),
             "bandwidth_hz": current_cfg.get("bandwidth") or current_cfg.get("buffer_size"),
-            "uri": current_cfg.get("uri"),
+            "uri": _uri,
             **{k: v for k, v in current_cfg.items() if k not in cfg_schema and k not in ("frequency", "sample_rate", "gain", "bandwidth", "buffer_size", "uri")}
         }
         return {
