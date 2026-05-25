@@ -121,3 +121,17 @@ async def get_session_stats(session_id: str) -> dict:
     framework = _platform_ref._frameworks.get(session_id)
     stats = framework.get_stats() if framework else {}
     return {"session_id": session_id, **stats}
+
+
+@router.get("/{session_id}/latest_result")
+async def get_session_latest_result(session_id: str) -> dict:
+    """
+    GET /api/v1/session/{session_id}/latest_result
+    返回最近一次推理结果（用于 HTTP 轮询替代 Socket.IO）
+    """
+    if _platform_ref is None:
+        raise HTTPException(status_code=500, detail="Platform not initialized")
+
+    history = _platform_ref._inference_history.get(session_id, [])
+    latest = history[-1] if history else None
+    return {"session_id": session_id, "result": latest}

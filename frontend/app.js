@@ -3,7 +3,13 @@
 // ================================================================
 'use strict';
 
-const API_BASE = 'http://localhost:5100';
+// 适配不同部署环境：从当前页面 origin 自动推导 API 主机（5100 -> 5104 隧道端口）
+// 5900/5102 前端 -> 5104 平台（新版本），5100 平台（旧版本）
+const _port = window.location.port;
+const _host = window.location.hostname;
+const _proto = window.location.protocol;
+const _apiPort = (_port === '5105' || _port === '5102') ? '5104' : '5100';
+const API_BASE = _proto + '//' + _host + ':' + _apiPort;
 
 // ---- State -------------------------------------------------------
 const S = {
@@ -46,61 +52,45 @@ async function api(method, path, body = null) {
   return res.json();
 }
 
-// ---- Socket.IO --------------------------------------------------
-let socket = null;
+// ---- HTTP 轮询（替代 Socket.IO）---------------------------
+let _pollT = null;
+let _pollCollectorT = null;
 
-function initSocket() {
-  if (socket && socket.connected) return;
+function startPolling() {
+  // 已启动则跳过
+  if (_pollT !== null) return;
 
-  socket = io(API_BASE, {
-    transports: ['websocket', 'polling'],
-    reconnection: true,
-    reconnectionDelay: 1000,
-    reconnectionAttempts: 10,
-  });
+  log('启动 HTTP 轮询');
 
-  socket.on('connect', () => {
-    log('Socket.IO 已连接 (id=' + socket.id + ')');
-    updateStatusDot('ok', '采集器已连接');
-    if (S.session_id) socket.emit('subscribe', { session_id: S.session_id });
-  });
+  // 推理结果轮询
+  _pollT = setInterval(async () => {
+    if (!S.session_id || !S.collecting) return;
+    try {
+      const data = await api('GET', '/api/v1/session/' + S.session_id + '/latest_result');
+      if (data.result) {
+        handleInferenceResult({
+          session_id: S.session_id,
+          ...data.result,
+        });
+      }
+    } catch (e) { /* silently ignore */ }
+  }, 500);
 
-  socket.on('disconnect', () => {
-    log('Socket.IO 已断开');
-    updateStatusDot('bad', '采集器断开');
-  });
-
-  socket.on('inference_result', (data) => {
-    handleInferenceResult(data);
-  });
-
-  socket.on('collector_stats', (data) => {
-    handleCollectorStats(data);
-  });
-
-  socket.on('device_status', (data) => {
-    const icons = { connected: '🟢', disconnected: '🔴', error: '🔴' };
-    log(`${icons[data.event] || '⚪'} ${data.device_id} — ${data.detail || data.event}`);
-    if (data.event === 'connected') {
-      S.collector_connected = true;
-      updateStatusDot('ok', '采集器已连接');
-      updateButtonStates();
-    } else if (data.event === 'disconnected' || data.event === 'error') {
-      S.collector_connected = false;
-      updateStatusDot('bad', '采集器未连接');
-      updateButtonStates();
-    }
-  });
-
-  socket.on('error', (data) => {
-    log('Socket错误 #' + (data.code || '?') + ': ' + (data.message || ''));
-  });
+  // 采集器状态轮询
+  _pollCollectorT = setInterval(async () => {
+    try {
+      const data = await api('GET', '/api/v1/collector/stats');
+      if (data.status === 'ok' && data.stats) {
+        handleCollectorStats(data.stats);
+      }
+    } catch (e) { /* silently ignore */ }
+  }, 500);
 }
 
-function subscribeSession(sessionId) {
-  if (!socket || !socket.connected) return;
-  socket.emit('subscribe', { session_id: sessionId });
-  log('已订阅会话: ' + sessionId);
+function stopPolling() {
+  if (_pollT !== null) { clearInterval(_pollT); _pollT = null; }
+  if (_pollCollectorT !== null) { clearInterval(_pollCollectorT); _pollCollectorT = null; }
+  log('停止 HTTP 轮询');
 }
 
 // ---- Inference result handler ------------------------------------
@@ -454,11 +444,8 @@ async function startSession() {
     updateStatusDot('run', '采数中');
     log('会话已启动: ' + S.session_id);
 
-    // Subscribe socket（幂等，可安全重复调用）
-    initSocket();
-    // connect 回调在页面加载时已触发（当时 session_id 为 null，未订阅）
-    // 所以这里必须显式调用 subscribeSession，确保订阅建立
-    if (S.session_id) subscribeSession(S.session_id);
+    // 启动 HTTP 轮询
+    startPolling();
 
     // Update UI
     updateButtonStates();
@@ -514,9 +501,7 @@ async function stopSession() {
   S.session_id = null;
   S.results = [];
 
-  if (socket && socket.connected) {
-    socket.emit('unsubscribe', { session_id: S.session_id });
-  }
+  stopPolling();
 
   // Reset UI
   updateStatusDot('ok', '采集器已连接');
@@ -745,8 +730,8 @@ function init() {
   scanDevices();
   updateButtonStates();
 
-  // Start socket connection early
-  initSocket();
+  // 启动 HTTP 轮询
+  startPolling();
 
   // Periodically refresh session config for live display
   setInterval(() => {

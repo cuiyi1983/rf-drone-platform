@@ -750,6 +750,46 @@ app.include_router(components.router)
 app.include_router(devices.router)
 app.include_router(collector_proxy.router)
 
+# ---- Collector stats REST API（替代 Socket.IO 推送）------------------
+@app.get("/api/v1/collector/stats")
+async def get_collector_stats():
+    """
+    GET /api/v1/collector/stats
+    返回当前采集器状态（buffer_level、fps、frames 等），
+    数据格式与之前 Socket.IO 的 collector_stats 事件一致。
+    """
+    # 找到最近一个活跃的 session
+    session_id = None
+    if platform._sessions and platform._frameworks:
+        for sid in platform._sessions:
+            framework = platform._frameworks.get(sid)
+            if framework is not None:
+                session_id = sid
+                break
+
+    if not session_id:
+        return {"status": "ok", "stats": {
+            "frames_per_second": 0,
+            "dropped_rate": 0,
+            "buffer_level": 0,
+            "total_frames": 0,
+            "total_dropped": 0,
+        }}
+
+    framework = platform._frameworks.get(session_id)
+    qstats = framework.get_stats() if framework else {}
+    return {
+        "status": "ok",
+        "stats": {
+            "session_id": session_id,
+            "frames_per_second": round(qstats.get("inference_count", 0) / max(1, qstats.get("frames_received", 1)), 2),
+            "dropped_rate": qstats.get("dropped_rate", 0),
+            "buffer_level": qstats.get("buffer_level", 0),
+            "total_frames": qstats.get("frames_received", 0),
+            "total_dropped": qstats.get("frames_dropped", 0),
+        }
+    }
+
 # 挂载 Socket.IO 到 /socket.io 路径（必须在路由注册后）
 def create_socketio_app(fastapi_app: Any) -> Any:
     """
