@@ -372,6 +372,7 @@ class Platform:
                 "frames_received": stats.get("frames_received", 0),
                 "frames_dropped": stats.get("frames_dropped", 0),
                 "duration_seconds": self._session_duration(session),
+                "inference_count": stats.get("inference_count", 0),
                 "detections_count": len(self._inference_history.get(session_id, []))
             }
         }

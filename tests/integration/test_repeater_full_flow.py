@@ -63,7 +63,8 @@ def ensure_platform_running():
 def cleanup_session():
     """每个测试前清理残留会话"""
     try:
-        r = requests.get(f"{PLATFORM_URL}/api/v1/session/list", timeout=3)
+        # 注意：/session/status（无 session_id）返回所有会话
+        r = requests.get(f"{PLATFORM_URL}/api/v1/session/status", timeout=3)
         if r.status_code == 200:
             for sess in r.json().get("sessions", []):
                 if sess.get("status") == "running":
@@ -294,7 +295,11 @@ class TestRepeaterFullFlow:
             "/api/v1/session/start",
             json={
                 "component_id": "rfuav-two-stage",
-                "config": {"confidence_threshold": 0.5}
+                "config": {
+                    "confidence_threshold": 0.5,
+                    "iq_file_path": "IQ-Record/noise_5db_600k.bin",
+                    "loop_play": True,
+                }
             }
         )
         assert resp.status_code == 200, f"session start failed: {resp.text}"
@@ -375,11 +380,15 @@ class TestRepeaterFullFlow:
         启动会话后立即停止，验证返回 status=stopped
         """
         # 启动
+        IQ_FILE = "IQ-Record/noise_5db_600k.bin"
         resp = api_post(
             "/api/v1/session/start",
             json={
                 "component_id": "sim-inference",
-                "config": {}
+                "config": {
+                    "iq_file_path": IQ_FILE,
+                    "loop_play": True,
+                }
             }
         )
         assert resp.status_code == 200
@@ -428,8 +437,8 @@ class TestRepeaterFullFlow:
         data = resp.json()
         session_id = data.get("session_id")
 
-        # 等待足够时间让数据循环
-        time.sleep(0.2)
+        # 等待足够时间让推理组件读取 IQ 文件并产生帧
+        time.sleep(5)
 
         # 停止并获取 stats
         stop_resp = api_post(
@@ -617,7 +626,11 @@ class TestRepeaterFullFlow:
                 "/api/v1/session/start",
                 json={
                     "component_id": component_id,
-                    "config": {"confidence_threshold": 0.5}
+                    "config": {
+                        "confidence_threshold": 0.5,
+                        "iq_file_path": "IQ-Record/noise_5db_600k.bin",
+                        "loop_play": True,
+                    }
                 }
             )
             assert resp.status_code == 200
