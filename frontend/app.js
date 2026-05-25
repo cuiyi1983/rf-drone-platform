@@ -3,13 +3,8 @@
 // ================================================================
 'use strict';
 
-// 适配不同部署环境：从当前页面 origin 自动推导 API 主机（5100 -> 5104 隧道端口）
-// 5900/5102 前端 -> 5104 平台（新版本），5100 平台（旧版本）
-const _port = window.location.port;
-const _host = window.location.hostname;
-const _proto = window.location.protocol;
-const _apiPort = (_port === '5105' || _port === '5102') ? '5104' : '5100';
-const API_BASE = _proto + '//' + _host + ':' + _apiPort;
+// 本地开发：前端和平台都在同一台机器上
+const API_BASE = 'http://localhost:5100';
 
 // ---- State -------------------------------------------------------
 const S = {
