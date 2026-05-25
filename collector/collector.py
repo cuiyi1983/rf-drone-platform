@@ -466,13 +466,6 @@ class Collector:
     # ------------------------------------------------------------------
     def _run_loop(self) -> None:
         """Background thread: reads IQ frames from device or simulator."""
-        logger.info(f"[Collector] _run_loop started (simulator={simulator is not None}, iq_file={getattr(config, 'iq_file_path', None)})")
-
-        # 检查 simulator 是否已加载数据（文件不存在时 _data 为 None）
-        if simulator is not None and not simulator.is_loaded():
-            logger.error("[Collector] simulator 未加载 IQ 数据（文件不存在或加载失败），_run_loop 退出")
-            return
-
         loop_count = 0
 
         session_id = self._session_id
@@ -480,6 +473,13 @@ class Collector:
         device = self._device
         simulator = self._simulator
         assert config is not None
+
+        logger.info(f"[Collector] _run_loop started (simulator={simulator is not None}, iq_file={getattr(config, 'iq_file_path', None)})")
+
+        # 检查 simulator 是否已加载数据（文件不存在时 _data 为 None）
+        if simulator is not None and not simulator.is_loaded():
+            logger.error("[Collector] simulator 未加载 IQ 数据（文件不存在或加载失败），_run_loop 退出")
+            return
 
         num_freqs = len(config.frequencies)
         last_hop = time.monotonic()
