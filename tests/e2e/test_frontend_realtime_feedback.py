@@ -14,18 +14,18 @@ test_frontend_realtime_feedback.py - 前端实时反馈 Socket.IO E2E 验证
     python -m pytest tests/e2e/test_frontend_realtime_feedback.py -v -s
 """
 
+import os
 import pytest
 import requests
 import time
 import subprocess
 import socket
 import sys
-import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 PLATFORM_URL = "http://localhost:5100"
-FRONTEND_DIR = "/repo/frontend"
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "frontend")
 
 
 def find_free_port():
@@ -86,7 +86,13 @@ class RealtimeFeedbackBrowser:
         return data
 
     def open_page_and_subscribe(self):
-        """打开前端页面，触发 startSession() 完整流程"""
+        """
+        打开前端页面，建立 Socket.IO 订阅。
+
+        注意：页面加载时 init() 已调用 initSocket()，socket 已连接但未 subscribe
+        （因为 connect 回调里 if (S.session_id) 为 None）。
+        所以不能只调 initSocket()，必须显式 emit subscribe。
+        """
         self.page.goto(
             f"http://localhost:{self.port}/index.html",
             wait_until="networkidle",
@@ -94,26 +100,28 @@ class RealtimeFeedbackBrowser:
         )
         time.sleep(1)
 
-        # 注入 session 状态，模拟 startSession() 成功后的状态
+        # 设置 session 状态（必须在 subscribe 之前）
         self.page.evaluate(
             f"""
             () => {{
-                S = {{
-                    session_id: '{self.session_id}',
-                    collecting: true,
-                    component_loaded: true,
-                    collector_connected: true,
-                    session_config: null,
-                    results: [],
-                    inf_count: 0,
-                    enabledColumns: new Set(['timestamp'])
-                }};
-                // 调用 initSocket() + subscribeSession()（这是 startSession 的核心）
-                if (typeof initSocket === 'function') initSocket();
+                S.session_id = '{self.session_id}';
+                S.collecting = true;
+                S.component_loaded = true;
+                S.collector_connected = true;
+                S.results = [];
+                S.inf_count = 0;
+                S.enabledColumns = new Set(['timestamp']);
+
+                // 页面加载时 initSocket() 已建立连接，connect 回调里 subscribe 未执行
+                // 现在显式 emit subscribe（模拟 startSession 的正确流程）
+                if (socket && socket.connected) {{
+                    socket.emit('subscribe', {{ session_id: '{self.session_id}' }});
+                    log('手动订阅: {self.session_id}');
+                }}
             }}
             """
         )
-        # 等待 socket 连接建立（最多 5 秒）
+        # 等待事件到达
         time.sleep(5)
 
     def wait_for_events(self, seconds: float = 4):

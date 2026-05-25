@@ -414,13 +414,15 @@ class Platform:
                 inference_config[k] = schema["default"]
 
         # 采集器配置（字段名映射：内部名 → 前端期望名）
+        # pluto-repeater 模式下 uri 固定为 "pluto-repeater"
+        _uri = user_config.get("uri") or ("pluto-repeater" if user_config.get("collector_type") == "pluto-repeater" else None)
         collector_config = {
             "center_freq_hz": user_config.get("frequency"),
             "sample_rate_hz": user_config.get("sample_rate"),
             "gain_db": user_config.get("gain"),
             "bandwidth_hz": user_config.get("bandwidth") or user_config.get("buffer_size"),
-            "uri": user_config.get("uri"),
-            "device_uri": user_config.get("uri"),
+            "uri": _uri,
+            "device_uri": _uri,
             **{k: v for k, v in user_config.items()
                if k not in ("frequency", "sample_rate", "gain", "bandwidth", "buffer_size", "uri")
                and k not in component.get("config_schema", {})},
