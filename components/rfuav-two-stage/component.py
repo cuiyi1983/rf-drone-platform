@@ -7,12 +7,15 @@ Stage2: ResNet152 classification of detected regions (7 drone models)
 Implements IInferenceComponent interface.
 """
 
+import logging
 import os
 import sys
 import time
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 # Add current directory to path for direct import
 _component_dir = os.path.dirname(os.path.abspath(__file__))
@@ -180,11 +183,15 @@ class RFUAVTwoStageComponent(IInferenceComponent):
         iq_data = iq_frame['iq_data']
         frame_id = iq_frame.get('frame_id', 0)
 
-        # Validate input length
+        # Warn if input length is insufficient — proceed with degraded accuracy
         min_points = self.get_manifest()['collector_requirements']['min_data_points']
+        actual_ms = len(iq_data) / 60_000_000 * 1000  # 60 MHz sample rate
+        required_ms = min_points / 60_000_000 * 1000
         if len(iq_data) < min_points:
-            raise ValueError(
-                f"IQ data too short: {len(iq_data)} < {min_points} (min required)"
+            logger.warning(
+                "[rfuav-two-stage] IQ 数据不足 %d < %d 点 (%.2fms < %.2fms)，"
+                "检测结果可能不准确（DJI 信号需 ≥10ms 观测窗口）",
+                len(iq_data), min_points, actual_ms, required_ms
             )
 
         # Get config
