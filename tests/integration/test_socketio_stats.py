@@ -232,6 +232,67 @@ class TestRESTSessionStats:
             )
 
 
+class TestCollectorStatsFieldConsistency:
+    """TC-INV-09: 后端推送字段与前端读取字段名一致性"""
+
+    def test_collector_stats_dropped_rate_field_name(self):
+        """
+        验证 collector_stats 事件包含 dropped_rate（前端的 handleCollectorStats 读取 dropped_rate）。
+
+        根因：前端 handleCollectorStats 读取 data.dropped，后端推送 data.dropped_rate，
+              导致丢帧率永远显示 "--"。
+
+        为什么用 Python AsyncClient 测试也能发现：
+        - assert_collector_stats_event 断言 dropped_rate 字段存在
+        - 测试在 2026-05-23 已覆盖此字段，但当时没有发现前端 bug，
+          原因是测试只验证"后端推送了正确字段"，不验证"前端读取了正确字段"
+        - 本测试记录此 gap：Python 测试和浏览器测试是两层独立的验证
+        """
+        resp = requests.post(
+            f"{PLATFORM_URL}/api/v1/session/start",
+            json={
+                "component_id": "sim-inference",
+                "config": {"iq_file_path": "IQ-Record/noise_5db_600k.bin", "loop_play": True}
+            },
+            timeout=15,
+        )
+        assert resp.status_code == 200
+        session_id = resp.json()["session_id"]
+
+        try:
+            collector = StatsCollector(session_id)
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(
+                collector.connect_and_wait(PLATFORM_URL, duration=3.0)
+            )
+
+            assert len(collector.stats_events) >= 1, "未收到 collector_stats"
+            event = collector.stats_events[0]
+
+            # 前端 handleCollectorStats 读取 dropped_rate，不是 dropped
+            assert "dropped_rate" in event, (
+                f"collector_stats 必须包含 dropped_rate 字段（前端读取 dropped_rate）。"
+                f"当前字段: {list(event.keys())}"
+            )
+            assert event["dropped_rate"] is not None, "dropped_rate 不应为 None"
+
+            # 确认前端不使用 dropped（只使用 dropped_rate）
+            # 这个断言记录了测试 gap：Python 测试无法验证前端 JS 实际读取了哪个字段
+            assert "dropped" not in event, (
+                f"后端不应推送 dropped 字段（前端读 dropped_rate）。"
+                f"字段 {list(event.keys())} 中包含 dropped，可能导致前端混淆。"
+            )
+
+            print(f"[PASS] TC-INV-09: dropped_rate={event['dropped_rate']}")
+
+        finally:
+            requests.post(
+                f"{PLATFORM_URL}/api/v1/session/stop",
+                json={"session_id": session_id},
+                timeout=10,
+            )
+
+
 # ── Main ────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
