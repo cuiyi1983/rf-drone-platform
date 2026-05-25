@@ -104,18 +104,37 @@ class IQSimulator:
     def read_chunk(self, num_samples: int) -> np.ndarray:
         """
         Return the next num_samples complex samples.
-        Wraps around to the start when EOF is reached (looping playback).
+        循环播放：文件末尾剩余不足时，从文件头继续读，直到凑满 num_samples。
+        确保每帧都是完整的 num_samples 点，无废帧。
         """
         if self._data is None:
             return np.array([], dtype=np.complex64)
 
-        if self._pos >= self._data.shape[0]:
-            self._pos = 0  # Loop
+        total = self._data.shape[0]
+        if num_samples >= total:
+            # 请求量 >= 文件大小，直接返回完整文件
+            self._pos = 0
+            return self._data.copy()
 
-        end = min(self._pos + num_samples, self._data.shape[0])
-        chunk = self._data[self._pos:end]
-        self._pos = end
-        return chunk
+        # 循环读，直到凑满 num_samples
+        parts = []
+        needed = num_samples
+        while needed > 0:
+            available = total - self._pos
+            if available >= needed:
+                # 当前pos够读，直接取
+                parts.append(self._data[self._pos:self._pos + needed])
+                self._pos += needed
+                if self._pos >= total:
+                    self._pos = 0
+                break
+            else:
+                # 不够读，读到尾部，回到文件头
+                parts.append(self._data[self._pos:])
+                needed -= available
+                self._pos = 0
+
+        return np.concatenate(parts) if len(parts) > 1 else parts[0]
 
     def read_chunk_as_bytes(self, num_samples: int) -> bytes:
         """Same as read_chunk but returns interleaved float32 bytes."""
