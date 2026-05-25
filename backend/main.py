@@ -401,8 +401,9 @@ class Platform:
         # 推理组件配置：来源为用户调用 start 时传入的 config 合并组件 schema defaults
         user_config = session.get("current_config", {})
         inference_config = {
-            k: v for k, v in user_config.items()
-            if k in component.get("config_schema", {})
+            "component_id": component_id,
+            **{k: v for k, v in user_config.items()
+               if k in component.get("config_schema", {})},
         }
         # 补充组件声明的 default 值（用户未指定时）
         for k, schema in component.get("config_schema", {}).items():
@@ -416,6 +417,7 @@ class Platform:
             "gain_db": user_config.get("gain"),
             "bandwidth_hz": user_config.get("bandwidth") or user_config.get("buffer_size"),
             "uri": user_config.get("uri"),
+            "device_uri": user_config.get("uri"),
             **{k: v for k, v in user_config.items()
                if k not in ("frequency", "sample_rate", "gain", "bandwidth", "buffer_size", "uri")
                and k not in component.get("config_schema", {})},
