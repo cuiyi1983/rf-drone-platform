@@ -53,6 +53,7 @@ class TCPDataServer:
         self._last_stats_time: float = time.monotonic()
         self._last_stats_bytes: int = 0
         self._last_stats_frames: int = 0
+        self._last_no_client_warn_time: float = time.monotonic()
 
     def start(self) -> None:
         """启动 TCP 数据服务器（后台线程）"""
@@ -113,8 +114,14 @@ class TCPDataServer:
         packet = header + raw_bytes
         packet_len = len(packet)
 
+        # 节流：只每 10 秒警告一次"无客户端"
+        now_warn = time.monotonic()
+
         clients_to_remove = []
         with self._clients_lock:
+            if not self._clients and (now_warn - self._last_no_client_warn_time >= 10.0):
+                logger.warning(f"[TCPDataServer] 无已连接客户端，当前 {self._total_frames_sent} 帧均被丢弃（platform 的 TCP 客户端是否连接到 6103？）")
+                self._last_no_client_warn_time = now_warn
             for client in self._clients:
                 try:
                     client.sendall(packet)

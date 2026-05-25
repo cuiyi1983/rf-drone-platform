@@ -653,6 +653,36 @@ class TestRepeaterFullFlow:
 
         print(f"[TC-INV-08] PASS - {len(session_ids)} 次 start/stop 无残留")
 
+    # ── TC-INV-09 ──────────────────────────────────────────────
+
+    def test_tc_inv09_nonexistent_iq_file_returns_error(self):
+        """
+        TC-INV-09: 文件不存在时启动采数应返回 400 错误
+
+        repeater 模式下 iq_file_path 不存在时，应在启动采数时
+        立即返回错误，而不是静默失败（无帧数据时没有任何提示）。
+        """
+        resp = requests.post(
+            f"{PLATFORM_URL}/api/v1/session/start",
+            json={
+                "component_id": "sim-inference",
+                "config": {
+                    "iq_file_path": "IQ-Record/nonexistent_file.bin",
+                    "loop_play": True,
+                }
+            },
+            timeout=10,
+        )
+        data = resp.json()
+        print(f"[TC-INV-09] 响应: status={resp.status_code} data={data}")
+
+        # 验证：HTTP 400 表示文件不存在被正确识别
+        assert resp.status_code == 400, \
+            f"文件不存在时应返回 HTTP 400，实际 {resp.status_code}: {data}"
+        assert "nonexistent" in str(data).lower() or "not found" in str(data).lower() or "iq file" in str(data).lower(), \
+            f"错误信息应提及文件未找到，当前: {data}"
+        print("[TC-INV-09] PASS - 文件不存在正确返回 HTTP 400")
+
 
 # ── Main (直接运行) ────────────────────────────────────────────
 
