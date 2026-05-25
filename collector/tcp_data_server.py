@@ -140,6 +140,10 @@ class TCPDataServer:
         self._total_bytes_sent += packet_len
         self._total_frames_sent += 1
 
+        # 每 100 帧打印一次 broadcast 调用（诊断用）
+        if self._total_frames_sent % 100 == 1:
+            logger.info(f"[TCPDataServer] broadcast: {self._total_frames_sent} frames sent, {len(self._clients)} clients")
+
         # 每 10 秒打印一次统计
         now = time.monotonic()
         elapsed = now - self._last_stats_time
