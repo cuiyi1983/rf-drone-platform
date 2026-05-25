@@ -90,9 +90,11 @@ class IQSimulator:
             sample_rate=self._sample_rate,
             duration_ms=duration_ms,
         )
+        file_size_bytes = path.stat().st_size if path.exists() else 0
         logger.info(
-            "Simulator loaded: %s  samples=%d  rate=%.1f MHz  duration=%.1f ms",
+            "Simulator loaded: %s  size=%.2f MB  samples=%d  rate=%.1f MHz  duration=%.1f ms",
             file_path,
+            file_size_bytes / 1_048_576,
             total_samples,
             self._sample_rate / 1e6,
             duration_ms,

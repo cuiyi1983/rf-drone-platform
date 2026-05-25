@@ -20,7 +20,7 @@ from collector.collector import Collector, CollectorConfig, CollectorState, IQFr
 from collector.devices import DeviceCapabilities, discover_devices
 from collector.simulator import IQSimulator
 from collector.socketio_server import get_socketio_server
-from collector.tcp_data_server import TCPDataServer
+from collector.tcp_data_server import TCPDataServer, UDPDataServer
 
 logger = logging.getLogger(__name__)
 
@@ -77,22 +77,34 @@ class CollectorAPI:
         self._simulator = IQSimulator()
         self._socketio_started = False
         self._tcp_server: Optional[TCPDataServer] = None
+        self._udp_server: Optional[UDPDataServer] = None
+        self._collector_type: str = "tcp"  # "tcp" or "udp"
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _start_socketio_once(self, host: str, port: int) -> None:
-        """Start the Socket.IO server and TCP data server once (lazy)."""
+    def _start_socketio_once(self, host: str, port: int, collector_type: str = "tcp") -> None:
+        """
+        Start the Socket.IO server and data servers (both TCP and UDP) once (lazy).
+        TCP and UDP channels are both started; collector_type determines which emitter is used.
+        """
         if not self._socketio_started:
             io_srv = get_socketio_server(host=host, port=port)
             io_srv.start()
             self._socketio_started = True
-            # Wire up frame emission (Socket.IO + TCP)
+            # Socket.IO emitter (always)
             self._collector.on_iq_frame(self._make_frame_emitter())
+            # TCP data channel
             self._collector.on_iq_frame(self._make_tcp_frame_emitter())
-            # Start TCP data server on 6103
             self._tcp_server = TCPDataServer(host="0.0.0.0", port=6103)
             self._tcp_server.start()
+            # UDP data channel
+            self._collector.on_iq_frame(self._make_udp_frame_emitter())
+            self._udp_server = UDPDataServer(host="0.0.0.0", port=6104)
+            self._udp_server.start()
+
+        # Update collector_type (for UI purposes)
+        self._collector_type = collector_type
 
     def _make_frame_emitter(self):
         """Return a callback that emits IQ frames via Socket.IO."""
@@ -127,6 +139,18 @@ class CollectorAPI:
                 tcp_server_ref[0] = self._tcp_server
             if tcp_server_ref[0]:
                 tcp_server_ref[0].broadcast_frame(frame.frame_id, frame.timestamp, frame.iq_data)
+
+        return emit_frame
+
+    def _make_udp_frame_emitter(self):
+        """Return a callback that sends IQ frames via UDP datagrams."""
+        udp_server_ref = [None]
+
+        def emit_frame(frame: IQFrame):
+            if udp_server_ref[0] is None:
+                udp_server_ref[0] = self._udp_server
+            if udp_server_ref[0]:
+                udp_server_ref[0].broadcast_frame(frame.frame_id, frame.timestamp, frame.iq_data)
 
         return emit_frame
 
@@ -202,9 +226,13 @@ class CollectorAPI:
                     return _json(400, f"IQ file load failed: {e}")
                 actual_mode = "simulator"
 
+            # Collector data protocol: "tcp" (default) or "udp" (for high-throughput localhost)
+            collector_type = raw_config.get("collector_type", "tcp")
+
             try:
-                self._start_socketio_once("0.0.0.0", 5101)
-                self._start_tcp_server_once()
+                self._start_socketio_once("0.0.0.0", 5101, collector_type=collector_type)
+                if collector_type != "udp":
+                    self._start_tcp_server_once()
                 session_id = self._collector.start(mode=actual_mode, config=config, force=force)
                 return _json(0, "采集已开始", session_id=session_id)
             except RuntimeError as e:

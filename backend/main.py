@@ -292,8 +292,20 @@ class Platform:
             "device_info": self._get_device_info()
         }
 
-        # 再建立 TCP 数据通道
-        collector_io = CollectorIOClient(collector_host=collector_host, collector_port=6103)
+        # 建立数据通道（TCP 或 UDP）
+        # repeater 模式（iq_file_path 存在）强制使用 UDP
+        effective_config = {**merged_config, **config}
+        if effective_config.get("iq_file_path"):
+            collector_type = "udp"
+            merged_config = {**merged_config, "collector_type": "udp"}
+        else:
+            collector_type = merged_config.get("collector_type", "tcp")
+        collector_io = CollectorIOClient(
+            collector_host=collector_host,
+            tcp_port=6103,
+            udp_port=6104,
+            collector_type=collector_type,
+        )
         connected = await collector_io.connect(framework, session_id)
         if connected:
             self._collector_io_client[session_id] = collector_io
@@ -534,6 +546,10 @@ class Platform:
                 collector_mode = "repeater"
             else:
                 collector_mode = "pluto"
+            # repeater 模式强制使用 UDP（无 TCP 流量控制问题）
+            if collector_mode == "repeater":
+                config = {**config, "collector_type": "udp"}
+
             resp = await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/start", json={
                 "session_id": session_id,
                 "mode": collector_mode,
