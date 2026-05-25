@@ -617,6 +617,9 @@ class Platform:
 
     def _on_result(self, session_id: str, result: dict, qstats: Any) -> None:
         """推理结果回调（从框架线程调用）"""
+        # 统一前端期望的字段格式
+        self._format_result(result)
+
         # 保存历史
         if session_id in self._inference_history:
             history = self._inference_history[session_id]
@@ -636,6 +639,30 @@ class Platform:
             }),
             loop
         )
+
+    def _format_result(self, result: dict) -> None:
+        """
+        统一推理结果字段格式，适配前端 renderResultsTable 期望的字段。
+        rfuav-two-stage 返回 detections 数组 → 转换为 is_drone / drone_prob / noise_prob
+        """
+        # 已是 sim-inference 格式（直接有 is_drone），无需转换
+        if result.get('is_drone') is not None:
+            return
+
+        detections = result.get('detections', [])
+        if detections:
+            # 取置信度最高的检测结果
+            best = max(detections, key=lambda d: d.get('stage2_conf', 0))
+            result['is_drone'] = True
+            result['drone_prob'] = best.get('stage2_conf', 0.0)
+            result['noise_prob'] = 1.0 - best.get('stage2_conf', 0.0)
+            result['process_time_ms'] = (result.get('debug', {}).get('inference_time_ms') or 0)
+        else:
+            # 无检测结果 → Noise
+            result['is_drone'] = False
+            result['drone_prob'] = 0.0
+            result['noise_prob'] = 1.0
+            result['process_time_ms'] = (result.get('debug', {}).get('inference_time_ms') or 0)
 
     async def _run_stats_loop(self, session_id: str) -> None:
         """每秒推送一次 collector_stats，不管有没有帧进来"""
