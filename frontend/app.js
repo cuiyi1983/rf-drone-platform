@@ -454,8 +454,11 @@ async function startSession() {
     updateStatusDot('run', '采数中');
     log('会话已启动: ' + S.session_id);
 
-    // Subscribe socket — connect callback in initSocket handles subscription automatically
+    // Subscribe socket（幂等，可安全重复调用）
     initSocket();
+    // connect 回调在页面加载时已触发（当时 session_id 为 null，未订阅）
+    // 所以这里必须显式调用 subscribeSession，确保订阅建立
+    if (S.session_id) subscribeSession(S.session_id);
 
     // Update UI
     updateButtonStates();
