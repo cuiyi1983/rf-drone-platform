@@ -466,7 +466,6 @@ class Collector:
     # ------------------------------------------------------------------
     def _run_loop(self) -> None:
         """Background thread: reads IQ frames from device or simulator."""
-        loop_count = 0
 
         session_id = self._session_id
         config = self._config
@@ -535,9 +534,9 @@ class Collector:
 
             self._stats.total_frames += 1
             self._emit_frame(frame)
-            loop_count += 1
-            if loop_count % 200 == 0:
-                logger.info(f"[Collector] _run_loop 运行中，已 emit {self._stats.total_frames} 帧")
+            # 前 5 帧打印状态，确认循环是否继续
+            if self._stats.total_frames <= 5:
+                logger.info(f"[Collector] frame {self._stats.total_frames} done, _stop_event={self._stop_event.is_set()}")
 
             # Throttle: sleep just enough to avoid busy-spinning.
             # Real Pluto rx() is blocking; simulator needs a small sleep.
