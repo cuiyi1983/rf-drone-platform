@@ -139,7 +139,7 @@ function handleCollectorStats(data) {
   bufVal.textContent = (level !== null && level !== undefined) ? level : '--';
 
   // Stats
-  $('buf-dropped').textContent = data.dropped != null ? (data.dropped * 100).toFixed(1) + '%' : '--';
+  $('buf-dropped').textContent = data.dropped_rate != null ? (data.dropped_rate * 100).toFixed(1) + '%' : '--';
   $('buf-fps').textContent = data.frames_per_second != null ? data.frames_per_second.toFixed(1) : '--';
   $('buf-frames').textContent = data.total_frames != null ? data.total_frames : '--';
   $('buf-coll').textContent = S.collecting ? '采集中' : '已停止';
@@ -454,9 +454,8 @@ async function startSession() {
     updateStatusDot('run', '采数中');
     log('会话已启动: ' + S.session_id);
 
-    // Subscribe socket
+    // Subscribe socket — connect callback in initSocket handles subscription automatically
     initSocket();
-    if (socket && socket.connected) subscribeSession(S.session_id);
 
     // Update UI
     updateButtonStates();
