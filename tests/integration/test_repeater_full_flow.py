@@ -317,42 +317,54 @@ class TestRepeaterFullFlow:
 
     # ── TC-008 ──────────────────────────────────────────────────
 
-    def test_tc008_inference_results_via_socketio(self):
+    def test_tc008_inference_results_via_http_polling(self):
         """
-        TC-008: 验证推理结果
+        TC-008: 验证推理结果（HTTP 轮询方式）
 
-        通过 WebSocket/Socket.IO 接收推理结果
-        （本测试只验证连接建立，不验证结果内容）
+        启动会话后，通过 HTTP 轮询 /api/v1/session/{id}/latest_result
+        验证能获取到推理结果（替代原来的 Socket.IO 方式）
         """
-        import socketio
-        sio = socketio.AsyncClient()
-        connected = False
+        # 1. 启动 repeater 会话（sim-inference + IQ 文件）
+        IQ_FILE = "IQ-Record/noise_5db_600k.bin"
+        resp = api_post(
+            "/api/v1/session/start",
+            json={
+                "component_id": "sim-inference",
+                "mode": "repeater",
+                "config": {
+                    "iq_file_path": IQ_FILE,
+                    "loop_play": True,
+                }
+            },
+        )
+        assert resp.status_code == 200, f"启动会话失败: {resp.text}"
+        data = resp.json()
+        assert data.get("status") in ("running", "started"), \
+            f"会话未启动: {data}"
+        session_id = data["session_id"]
+        print(f"[TC-008] 会话已启动: {session_id}")
 
-        @sio.on("connect")
-        def on_connect():
-            nonlocal connected
-            connected = True
+        # 2. 轮询最多 10 秒，等待推理结果
+        result_received = False
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            resp = api_get(f"/api/v1/session/{session_id}/latest_result")
+            if resp.status_code == 200:
+                d = resp.json()
+                if d.get("result") is not None:
+                    result_received = True
+                    print(f"[TC-008] 收到推理结果: {d['result']}")
+                    break
+            time.sleep(0.5)
 
-        @sio.on("iq_frame")
-        def on_frame(data):
-            pass
+        # 3. 停止会话
+        stop_resp = api_post("/api/v1/session/stop", json={"session_id": session_id})
+        stop_data = stop_resp.json()
+        assert stop_data.get("status") == "stopped", f"停止会话失败: {stop_data}"
 
-        @sio.on("inference_result")
-        def on_result(data):
-            pass
-
-        try:
-            import asyncio
-            asyncio.get_event_loop().run_until_complete(
-                sio.connect("http://localhost:5100", transports=["polling"])
-            )
-        except Exception:
-            pytest.skip("Socket.IO service not available")
-
-        if sio.connected:
-            sio.disconnect()
-
-        print(f"[TC-008] PASS - Socket.IO connected={connected}")
+        assert result_received, \
+            "TC-008 失败: 轮询 10 秒未收到推理结果（repeater 模式需 IQ 文件）"
+        print(f"[TC-008] PASS - HTTP 轮询获取推理结果成功")
 
     # ── TC-009 ──────────────────────────────────────────────────
 
