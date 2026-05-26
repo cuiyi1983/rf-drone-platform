@@ -425,13 +425,14 @@ async function startSession() {
 
   try {
     const params = collectSchemaParams();
-    // Add buffer_size (check repeater panel first, then Pluto params)
-    const bsRepeater = $('buffer_size_repeater');
-    const bsPluto = $('buffer_size');
-    if (bsRepeater && bsRepeater.value) {
-        params.buffer_size = parseInt(bsRepeater.value || 524288);
-    } else if (bsPluto) {
-        params.buffer_size = parseInt(bsPluto.value || 524288);
+    // 根据选择的设备类型，只读对应配置框的buffer_size
+    const isRepeater = $('deviceSel')?.value?.includes('pluto-repeater');
+    if (isRepeater) {
+        const bs = $('buffer_size_repeater');
+        if (bs?.value) params.buffer_size = parseInt(bs.value);
+    } else {
+        const bs = $('buffer_size');
+        if (bs?.value) params.buffer_size = parseInt(bs.value);
     }
     const data = await api('POST', '/api/v1/session/start', {
       component_id: componentId,
@@ -597,11 +598,15 @@ async function applyCollectorParams() {
   const aps = $('aps');
   if (aps) aps.innerHTML = '<span style="color:var(--mut)">应用配置中…</span>';
   try {
+    // 真实Pluto设备：只读Pluto参数区的buffer_size
+    const isRepeater = deviceId.includes('pluto-repeater');
     const payload = {
       frequency: parseFloat($('cf')?.value || 5805) * 1e6,
       sample_rate: parseFloat($('sr')?.value || 60) * 1e6,
       gain: parseFloat($('gain')?.value || 20),
-      buffer_size: parseInt(($('buffer_size_repeater') || $('buffer_size'))?.value || 524288),
+      buffer_size: isRepeater
+        ? parseInt($('buffer_size_repeater')?.value || 524288)
+        : parseInt($('buffer_size')?.value || 524288),
     };
     await api('POST', '/api/v1/collector/apply_component_config', {
       source: 'ui',
