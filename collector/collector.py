@@ -519,9 +519,9 @@ class Collector:
 
             # ---- Determine center_freq from hardware (真实 Pluto 模式) ----
             # 真实 Pluto：从硬件回读 rx_lo，确保与实际配置一致
-            # Repeater/Simulator：从 config 读取
+            # Repeater/Simulator：填空（传 0），Platform 端从 config 读取或保持上次值
             if simulator is not None:
-                center_freq = config.frequencies[self._freq_index]
+                center_freq = 0  # 无真实硬件，填空值由 Platform 端容错处理
             else:
                 # device.read_samples() 之后立即回读 rx_lo，确保频率已更新
                 # 这是 center_freq 的唯一可信来源（不得从 config 注入）

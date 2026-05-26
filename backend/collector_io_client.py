@@ -232,10 +232,13 @@ class CollectorIOClient:
             arr = np.frombuffer(data, dtype=np.float32)
             iq_complex = arr[0::2] + 1j * arr[1::2]
             if self._framework_ref:
+                # center_freq 为 0 表示 repeater/simulator 模式无真实硬件，
+                # 使用 config 中注入的默认值
+                effective_freq = center_freq if center_freq != 0 else self._center_freq
                 iq_frame = {
                     "frame_id": frame_id,
                     "timestamp": timestamp,
-                    "center_freq": center_freq,  # 从帧头解析，不再从 config 注入
+                    "center_freq": effective_freq,
                     "sample_rate": self._sample_rate,
                     "iq_data": iq_complex.astype(np.complex64),
                 }
