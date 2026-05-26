@@ -637,25 +637,42 @@ class Platform:
     def _format_result(self, result: dict) -> None:
         """
         统一推理结果字段格式，适配前端 renderResultsTable 期望的字段。
-        rfuav-two-stage 返回 detections 数组 → 转换为 is_drone / drone_prob / noise_prob
+        - rfuav-two-stage: 有 center_freq_mhz 或 detections 含 stage2_conf
+        - sim-inference: 有 detections.frequency (MHz) 和 power_dbm
         """
-        # 已是 sim-inference 格式（直接有 is_drone），无需转换
-        if result.get('is_drone') is not None:
-            return
-
         detections = result.get('detections', [])
-        if detections:
-            # 取置信度最高的检测结果
-            best = max(detections, key=lambda d: d.get('stage2_conf', 0))
-            result['is_drone'] = True
-            result['drone_prob'] = best.get('stage2_conf', 0.0)
-            result['noise_prob'] = 1.0 - best.get('stage2_conf', 0.0)
+        is_rfuav = result.get('center_freq_mhz') is not None or (
+            detections and any(d.get('stage2_conf') is not None for d in detections)
+        )
+
+        if is_rfuav:
+            # rfuav-two-stage: 从 detections 转换
+            if detections:
+                best = max(detections, key=lambda d: d.get('stage2_conf', 0))
+                result['is_drone'] = True
+                result['drone_prob'] = best.get('stage2_conf', 0.0)
+                result['noise_prob'] = 1.0 - best.get('stage2_conf', 0.0)
+            else:
+                result['is_drone'] = False
+                result['drone_prob'] = 0.0
+                result['noise_prob'] = 1.0
+            # rfuav 字段映射
+            result['freq_mhz'] = result.get('center_freq_mhz')
+            # power_db 直接透传
             result['process_time_ms'] = (result.get('debug', {}).get('inference_time_ms') or 0)
         else:
-            # 无检测结果 → Noise
-            result['is_drone'] = False
-            result['drone_prob'] = 0.0
-            result['noise_prob'] = 1.0
+            # sim-inference: 透传已有字段，补充前端期望的字段名
+            if detections:
+                best_det = detections[0]
+                result['freq_mhz'] = best_det.get('frequency')
+                result['power_db'] = best_det.get('power_dbm')
+                result['is_drone'] = True
+                result['drone_prob'] = best_det.get('confidence')
+                result['noise_prob'] = 1.0 - best_det.get('confidence', 0.0)
+            else:
+                result['is_drone'] = False
+                result['drone_prob'] = 0.0
+                result['noise_prob'] = 1.0
             result['process_time_ms'] = (result.get('debug', {}).get('inference_time_ms') or 0)
 
     async def _run_stats_loop(self, session_id: str) -> None:
