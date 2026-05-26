@@ -300,6 +300,8 @@ class Platform:
             tcp_port=6103,
             udp_port=6104,
             collector_type=collector_type,
+            center_freq=merged_config.get("frequency", 5_805_000_000),
+            sample_rate=merged_config.get("sample_rate", 60_000_000),
         )
         connected = await collector_io.connect(framework, session_id)
         if connected:
