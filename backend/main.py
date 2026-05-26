@@ -292,14 +292,9 @@ class Platform:
             "device_info": self._get_device_info()
         }
 
-        # 建立数据通道（TCP 或 UDP）
-        # repeater 模式（iq_file_path 存在）强制使用 UDP
-        effective_config = {**merged_config, **config}
-        if effective_config.get("iq_file_path"):
-            collector_type = "udp"
-            merged_config = {**merged_config, "collector_type": "udp"}
-        else:
-            collector_type = merged_config.get("collector_type", "tcp")
+        # 建立数据通道（全部 UDP，删除 TCP）
+        # UDP 无连接，无队列积压，无发送超时问题
+        collector_type = "udp"
         collector_io = CollectorIOClient(
             collector_host=collector_host,
             tcp_port=6103,
@@ -546,11 +541,8 @@ class Platform:
                 collector_mode = "repeater"
             else:
                 collector_mode = "pluto"
-            # 非 TCP 模式强制使用 UDP（无 TCP 队列积压和连接时序问题）
-            # repeater 模式: 始终 UDP
-            # pluto 模式: 改为 UDP，避免 TCP send buffer 阻塞 collector 线程
-            if collector_mode != "tcp":
-                config = {**config, "collector_type": "udp"}
+            # 全部使用 UDP（删除 TCP 路径）
+            config = {**config, "collector_type": "udp"}
 
             resp = await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/start", json={
                 "session_id": session_id,
