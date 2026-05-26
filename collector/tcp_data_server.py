@@ -50,7 +50,7 @@ UDP_DATA_PORT = 6104  # UDP 数据端口（无 TCP 流量控制问题）
 # UDP 分片参数
 _UDP_MAX_PAYLOAD = 8192  # 每 UDP 包 payload 8KB（避免云服务器 208KB buffer 溢出丢包）
 # _UDP_FRAG_HDR_SIZE removed - use _UDP_FRAG_HDR_SIZE or _UDP_FIRST_FRAG_HDR_SIZE
-_UDP_MAX_FRAGS = 256  # 每帧最大分片数
+_UDP_MAX_FRAGS = 520  # 每帧最大分片数
 
 # TCP 帧头格式：frame_id(8) + timestamp(8) + data_len(4) + center_freq(8) = 28 bytes
 _TCP_FRAME_HEADER_FMT = "!QdIQ"  # big-endian: uint64, double, uint32, uint64
