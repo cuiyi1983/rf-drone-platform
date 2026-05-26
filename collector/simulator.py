@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import struct
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -142,7 +143,9 @@ class IQSimulator:
         iq = np.empty(chunk.size * 2, dtype=np.float32)
         iq[0::2] = chunk.real.astype(np.float32)
         iq[1::2] = chunk.imag.astype(np.float32)
-        return iq.tobytes()
+        result = iq.tobytes()
+        time.sleep(0.05)  # Repeater 模式流控：50ms/帧
+        return result
 
     @property
     def metadata(self) -> Optional[SimulatorMetadata]:
