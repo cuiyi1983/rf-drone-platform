@@ -68,6 +68,9 @@ def iq_to_spectrogram(iq_data: np.ndarray, target_height: int = 640, target_widt
         window_f = window.astype(np.float32)
         stft_matrix[:, i] = np.fft.fft(segment * window_f)
 
+    # Apply fftshift to move zero frequency to center (matching training config)
+    stft_matrix = np.fft.fftshift(stft_matrix, axes=0)
+
     # Take magnitude (only first half for positive frequencies)
     stft_matrix = np.abs(stft_matrix[:NPERSEG // 2 + 1, :])
 
@@ -77,11 +80,10 @@ def iq_to_spectrogram(iq_data: np.ndarray, target_height: int = 640, target_widt
     # Convert to dB scale
     power_db = 10 * np.log10(power + 1e-10)
 
-    # Normalize to 0-255
-    # Find min/max for normalization (clip outliers)
-    p_min = np.percentile(power_db, 1)
-    p_max = np.percentile(power_db, 99)
-    power_db_norm = np.clip((power_db - p_min) / (p_max - p_min + 1e-10), 0, 1)
+    # Normalize to 0-255 (minmax, matching training config)
+    p_min = power_db.min()
+    p_max = power_db.max()
+    power_db_norm = (power_db - p_min) / (p_max - p_min + 1e-10)
     spectrogram = (power_db_norm * 255).astype(np.uint8)
 
     # Resize to target size using bilinear interpolation
