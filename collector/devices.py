@@ -114,6 +114,11 @@ class IDevice(ABC):
         """Return hardware capabilities."""
         raise NotImplementedError
 
+    @abstractmethod
+    def get_frequency(self) -> int:
+        """Return current centre frequency in Hz (read from hardware for Pluto)."""
+        raise NotImplementedError
+
 
 # -----------------------------------------------------------------------------
 # Mock implementation (used when DEVICE_IMPL = "mock")
@@ -207,6 +212,10 @@ class MockPlutoDevice(IDevice):
 
     def get_capabilities(self) -> DeviceCapabilities:
         return DeviceCapabilities()
+
+    def get_frequency(self) -> int:
+        """Return current centre frequency (mock: returns cached _frequency)."""
+        return self._frequency
 
 
 # -----------------------------------------------------------------------------
@@ -326,6 +335,10 @@ class PlutoDevice(IDevice):
 
     def get_capabilities(self) -> DeviceCapabilities:
         return DeviceCapabilities()
+
+    def get_frequency(self) -> int:
+        """Return current centre frequency in Hz (read from real Pluto hardware via sdr.rx_lo)."""
+        return int(self._sdr.rx_lo)
 
 
 # -----------------------------------------------------------------------------

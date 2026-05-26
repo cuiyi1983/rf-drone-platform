@@ -138,7 +138,7 @@ class CollectorAPI:
             if tcp_server_ref[0] is None:
                 tcp_server_ref[0] = self._tcp_server
             if tcp_server_ref[0]:
-                tcp_server_ref[0].broadcast_frame(frame.frame_id, frame.timestamp, frame.iq_data)
+                tcp_server_ref[0].broadcast_frame(frame.frame_id, frame.timestamp, frame.iq_data, frame.center_freq)
 
         return emit_frame
 
@@ -150,7 +150,7 @@ class CollectorAPI:
             if udp_server_ref[0] is None:
                 udp_server_ref[0] = self._udp_server
             if udp_server_ref[0]:
-                udp_server_ref[0].broadcast_frame(frame.frame_id, frame.timestamp, frame.iq_data)
+                udp_server_ref[0].broadcast_frame(frame.frame_id, frame.timestamp, frame.iq_data, frame.center_freq)
 
         return emit_frame
 

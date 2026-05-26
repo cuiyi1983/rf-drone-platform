@@ -517,12 +517,26 @@ class Collector:
                 logger.info("IQ file playback complete (loop_play=False)")
                 break
 
+            # ---- Determine center_freq from hardware (真实 Pluto 模式) ----
+            # 真实 Pluto：从硬件回读 rx_lo，确保与实际配置一致
+            # Repeater/Simulator：从 config 读取
+            if simulator is not None:
+                center_freq = config.frequencies[self._freq_index]
+            else:
+                # device.read_samples() 之后立即回读 rx_lo，确保频率已更新
+                # 这是 center_freq 的唯一可信来源（不得从 config 注入）
+                try:
+                    center_freq = device.get_frequency()
+                except Exception:
+                    center_freq = config.frequencies[self._freq_index]
+                    logger.warning("get_frequency() failed, fallback to config")
+
             # ---- Build frame dict (to match collector-api.yaml schema) ----
             frame = IQFrame(
                 frame_id=self._frame_id,
                 burst_id=self._burst_id,
                 timestamp=time.time(),
-                center_freq=config.frequencies[self._freq_index],
+                center_freq=center_freq,
                 sample_rate=config.sample_rate,
                 iq_data=iq_data.astype(np.complex64),
                 metadata={"rx_buffer_size": config.buffer_size},

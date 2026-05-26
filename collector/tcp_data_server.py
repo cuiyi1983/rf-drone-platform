@@ -1,14 +1,32 @@
 """
-tcp_data_server.py - Collector 侧 TCP 二进制数据通道
+tcp_data_server.py - Collector 侧 TCP/UDP 二进制数据通道
 
-启动时在 6103 端口监听，接收 Platform Backend 的 TCP 连接请求。
+启动时在 6103 端口监听 TCP 连接，在 6104 端口监听 UDP 注册。
 Collector._run_loop 每帧通过此通道向已连接客户端发送二进制 IQ 数据。
 
-传输格式（每帧）：
-  8 bytes  - frame_id  (uint64, big-endian)
-  8 bytes  - timestamp (float64, Unix epoch)
-  4 bytes  - data_len  (uint32, IQ samples count)
-  8*N bytes - IQ 数据 (float32 实部, float32 虚部 交织，N = data_len)
+TCP 传输格式（每帧，28 bytes 头）：
+  8 bytes  - frame_id    (uint64, big-endian)
+  8 bytes  - timestamp   (float64, Unix epoch)
+  4 bytes  - data_len    (uint32, IQ samples count)
+  8 bytes  - center_freq (uint64, Hz, 从 Pluto 硬件回读)
+  8*N bytes - IQ 数据    (float32 实部, float32 虚部 交织，N = data_len)
+
+UDP 首分片格式（36 bytes 头）：
+  8 bytes  - frame_id    (uint64)
+  4 bytes  - frag_idx    (uint32)
+  4 bytes  - total_frags (uint32)
+  8 bytes  - timestamp   (float64)
+  4 bytes  - data_len    (uint32)
+  8 bytes  - center_freq (uint64, Hz)
+  8*N bytes - IQ 数据
+
+UDP 后续分片格式（28 bytes 头，无 center_freq）：
+  8 bytes  - frame_id    (uint64)
+  4 bytes  - frag_idx    (uint32)
+  4 bytes  - total_frags (uint32)
+  8 bytes  - timestamp   (float64)
+  4 bytes  - data_len    (uint32)
+  8*N bytes - IQ 数据
 """
 
 from __future__ import annotations
@@ -31,12 +49,20 @@ UDP_DATA_PORT = 6104  # UDP 数据端口（无 TCP 流量控制问题）
 
 # UDP 分片参数
 _UDP_MAX_PAYLOAD = 60 * 1024  # 每 UDP 包 payload 60KB（留头部空间）
-_UDP_FRAG_HDR_SIZE = 24  # frame_id(8) + frag_idx(4) + total_frags(4) + data_len(4) + timestamp(8)
+# _UDP_FRAG_HDR_SIZE removed - use _UDP_FRAG_HDR_SIZE or _UDP_FIRST_FRAG_HDR_SIZE
 _UDP_MAX_FRAGS = 256  # 每帧最大分片数
 
-# 帧头格式：frame_id(8) + timestamp(8) + data_len(4) = 20 bytes
-_FRAME_HEADER_FMT = "!QdI"  # big-endian: unsigned long long, double, unsigned int
-_FRAME_HEADER_SIZE = struct.calcsize(_FRAME_HEADER_FMT)
+# TCP 帧头格式：frame_id(8) + timestamp(8) + data_len(4) + center_freq(8) = 28 bytes
+_TCP_FRAME_HEADER_FMT = "!QdIQ"  # big-endian: uint64, double, uint32, uint64
+_TCP_FRAME_HEADER_SIZE = struct.calcsize(_TCP_FRAME_HEADER_FMT)
+
+# UDP 首分片头格式：公共头(28) + center_freq(8) = 36 bytes
+_UDP_FIRST_FRAG_FMT = "!QII dIQ"  # frame_id + frag_idx + total_frags + timestamp + data_len + center_freq
+_UDP_FIRST_FRAG_HDR_SIZE = struct.calcsize(_UDP_FIRST_FRAG_FMT)
+
+# UDP 后续分片头格式（无 center_freq）：28 bytes
+_UDP_FRAG_FMT = "!QII dI"  # frame_id + frag_idx + total_frags + timestamp + data_len
+_UDP_FRAG_HDR_SIZE = struct.calcsize(_UDP_FRAG_FMT)
 
 # 帧队列最大长度（超过则丢帧）
 _MAX_FRAME_QUEUE = 100
@@ -111,10 +137,11 @@ class TCPDataServer:
             self._clients.clear()
         logger.info("TCP data server stopped")
 
-    def broadcast_frame(self, frame_id: int, timestamp: float, iq_data: np.ndarray) -> None:
+    def broadcast_frame(self, frame_id: int, timestamp: float, iq_data: np.ndarray, center_freq: int) -> None:
         """
         将 IQ 帧加入发送队列（解耦 collector 线程和 TCP 发送）。
         由 Collector._run_loop 调用（每次新帧到达时）。
+        center_freq: 当前中心频率（Hz），从 Pluto 硬件回读。
         """
         if not self._running:
             return
@@ -129,8 +156,8 @@ class TCPDataServer:
         raw_bytes = iq_float.tobytes()
         data_len = iq_data.size
 
-        # 打包帧头
-        header = struct.pack(_FRAME_HEADER_FMT, frame_id, timestamp, data_len)
+        # 打包帧头（包含 center_freq）
+        header = struct.pack(_TCP_FRAME_HEADER_FMT, frame_id, timestamp, data_len, center_freq)
         packet = header + raw_bytes
 
         # 入队列（非阻塞，队列满则丢帧）
@@ -308,10 +335,11 @@ class UDPDataServer:
             self._clients.clear()
         logger.info("UDP data server stopped")
 
-    def broadcast_frame(self, frame_id: int, timestamp: float, iq_data: np.ndarray) -> None:
+    def broadcast_frame(self, frame_id: int, timestamp: float, iq_data: np.ndarray, center_freq: int) -> None:
         """
         将 IQ 帧通过 UDP 广播到所有已注册客户端。
         自动分片：每帧拆成多个 UDP 包（每包最多 _UDP_MAX_PAYLOAD 字节）。
+        center_freq: 当前中心频率（Hz），从 Pluto 硬件回读，仅在首分片中传输。
         """
         if not self._running:
             return
@@ -325,8 +353,8 @@ class UDPDataServer:
         raw_bytes = iq_float.tobytes()
         data_len = iq_data.size
 
-        # 分片
-        max_payload = _UDP_MAX_PAYLOAD - _UDP_FRAG_HDR_SIZE
+        # 分片（后续分片用 28 字节头，首分片用 36 字节头含 center_freq）
+        max_payload = _UDP_MAX_PAYLOAD - _UDP_FIRST_FRAG_HDR_SIZE
         samples_per_frag = max_payload // 8  # 8 bytes per complex sample
         total_frags = (len(raw_bytes) + max_payload - 1) // max_payload
         if total_frags > _UDP_MAX_FRAGS:
@@ -341,20 +369,23 @@ class UDPDataServer:
         if not clients_snapshot:
             return
 
-        # 帧头（帧级别）
-        frame_header = struct.pack(_FRAME_HEADER_FMT, frame_id, timestamp, data_len)
-
         # 发送分片
         for frag_idx in range(total_frags):
             start = frag_idx * max_payload
             end = min(start + max_payload, len(raw_bytes))
             frag_data = raw_bytes[start:end]
 
-            # 分片头
-            frag_hdr = struct.pack(
-                "!QII dI",  # frame_id(8) + frag_idx(4) + total_frags(4) + timestamp(8) + data_len(4)
-                frame_id, frag_idx, total_frags, timestamp, data_len
-            )
+            # 分片头：首分片含 center_freq，后续分片不含
+            if frag_idx == 0:
+                frag_hdr = struct.pack(
+                    _UDP_FIRST_FRAG_FMT,  # frame_id(8) + frag_idx(4) + total_frags(4) + timestamp(8) + data_len(4) + center_freq(8)
+                    frame_id, frag_idx, total_frags, timestamp, data_len, center_freq
+                )
+            else:
+                frag_hdr = struct.pack(
+                    _UDP_FRAG_FMT,  # frame_id(8) + frag_idx(4) + total_frags(4) + timestamp(8) + data_len(4)
+                    frame_id, frag_idx, total_frags, timestamp, data_len
+                )
             packet = frag_hdr + frag_data
 
             for addr in clients_snapshot:

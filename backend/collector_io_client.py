@@ -22,11 +22,15 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# TCP 帧头格式
-_TCP_FRAME_FMT = "!QdI"  # frame_id(8) + timestamp(8) + data_len(4)
+# TCP 帧头格式：frame_id(8) + timestamp(8) + data_len(4) + center_freq(8) = 28 bytes
+_TCP_FRAME_FMT = "!QdIQ"  # frame_id(8) + timestamp(8) + data_len(4) + center_freq(8)
 _TCP_FRAME_SIZE = struct.calcsize(_TCP_FRAME_FMT)
 
-# UDP 帧分片格式（与 Collector 侧一致）
+# UDP 首分片格式（含 center_freq）：frame_id(8) + frag_idx(4) + total_frags(4) + timestamp(8) + data_len(4) + center_freq(8) = 36 bytes
+_UDP_FIRST_FRAG_FMT = "!QII dIQ"
+_UDP_FIRST_FRAG_HDR_SIZE = struct.calcsize(_UDP_FIRST_FRAG_FMT)
+
+# UDP 后续分片格式（无 center_freq）：frame_id(8) + frag_idx(4) + total_frags(4) + timestamp(8) + data_len(4) = 28 bytes
 _UDP_FRAG_FMT = "!QII dI"  # frame_id(8) + frag_idx(4) + total_frags(4) + timestamp(8) + data_len(4)
 _UDP_FRAG_HDR_SIZE = struct.calcsize(_UDP_FRAG_FMT)
 
@@ -140,7 +144,7 @@ class CollectorIOClient:
                 if not header or len(header) < _TCP_FRAME_SIZE:
                     continue
 
-                frame_id, timestamp, data_len = struct.unpack(_TCP_FRAME_FMT, header)
+                frame_id, timestamp, data_len, center_freq = struct.unpack(_TCP_FRAME_FMT, header)
                 byte_count = data_len * _SAMPLE_SIZE
                 data = b""
                 while len(data) < byte_count:
@@ -153,7 +157,7 @@ class CollectorIOClient:
                     logger.warning("CollectorIOClient[TCP]: 数据不完整，丢弃帧 %d", frame_id)
                     continue
 
-                self._deliver_frame(frame_id, timestamp, data)
+                self._deliver_frame(frame_id, timestamp, data, center_freq)
 
             except socket.timeout:
                 continue
@@ -164,41 +168,56 @@ class CollectorIOClient:
 
     def _udp_recv_loop(self) -> None:
         """从 UDP socket 持续接收分片 IQ 数据帧"""
-        # 分片缓存：frame_id → {frag_idx → data, received_frags, total_frags, timestamp, data_len}
+        # 分片缓存：frame_id → {frag_idx → data, total_frags, timestamp, data_len, center_freq}
         fragments: dict = {}
 
         while self._running:
             try:
                 self._sock.settimeout(0.5)
-                packet, addr = self._sock.recvfrom(65536 + _UDP_FRAG_HDR_SIZE)
-                if len(packet) < _UDP_FRAG_HDR_SIZE:
-                    continue
-
-                frame_id, frag_idx, total_frags, timestamp, data_len = struct.unpack(
-                    _UDP_FRAG_FMT, packet[:_UDP_FRAG_HDR_SIZE]
-                )
-                frag_data = packet[_UDP_FRAG_HDR_SIZE:]
-
-                # 初始化或更新分片缓存
-                if frame_id not in fragments:
-                    # 计算该帧总字节数
-                    total_bytes = data_len * _SAMPLE_SIZE
+                packet, addr = self._sock.recvfrom(65536 + _UDP_FIRST_FRAG_HDR_SIZE)
+                
+                center_freq = 0  # 默认值，后续分片不携带此字段
+                
+                # 判断是首分片(36字节头)还是后续分片(28字节头)
+                if len(packet) >= _UDP_FIRST_FRAG_HDR_SIZE:
+                    # 首分片：含 center_freq
+                    frame_id, frag_idx, total_frags, timestamp, data_len, center_freq = struct.unpack(
+                        _UDP_FIRST_FRAG_FMT, packet[:_UDP_FIRST_FRAG_HDR_SIZE]
+                    )
+                    frag_data = packet[_UDP_FIRST_FRAG_HDR_SIZE:]
+                    
+                    # 初始化分片缓存（仅首分片时初始化）
                     fragments[frame_id] = {
                         "total_frags": total_frags,
                         "chunks": {},  # frag_idx → bytes
                         "timestamp": timestamp,
                         "data_len": data_len,
+                        "center_freq": center_freq,
                     }
-
-                f = fragments[frame_id]
-                f["chunks"][frag_idx] = frag_data
+                    f = fragments[frame_id]
+                    f["chunks"][frag_idx] = frag_data
+                        
+                elif len(packet) >= _UDP_FRAG_HDR_SIZE:
+                    # 后续分片：不含 center_freq，从缓存获取
+                    frame_id, frag_idx, total_frags, timestamp, data_len = struct.unpack(
+                        _UDP_FRAG_FMT, packet[:_UDP_FRAG_HDR_SIZE]
+                    )
+                    frag_data = packet[_UDP_FRAG_HDR_SIZE:]
+                    
+                    if frame_id not in fragments:
+                        # 没见过此帧的首分片，忽略此分片
+                        continue
+                    f = fragments[frame_id]
+                    f["chunks"][frag_idx] = frag_data
+                else:
+                    continue
 
                 # 如果收到完整帧，重组并交付
                 if len(f["chunks"]) == f["total_frags"]:
                     # 按分片序号拼接
                     full_data = b"".join(f["chunks"][i] for i in range(f["total_frags"]))
                     del fragments[frame_id]
-                    self._deliver_frame(frame_id, f["timestamp"], full_data)
+                    self._deliver_frame(frame_id, f["timestamp"], full_data, f["center_freq"])
 
             except socket.timeout:
                 continue
@@ -207,7 +226,7 @@ class CollectorIOClient:
                     logger.debug(f"CollectorIOClient[UDP]: recv error: {e}")
                 continue
 
-    def _deliver_frame(self, frame_id: int, timestamp: float, data: bytes) -> None:
+    def _deliver_frame(self, frame_id: int, timestamp: float, data: bytes, center_freq: int) -> None:
         """将原始字节数据解码为复数数组并注入框架"""
         try:
             arr = np.frombuffer(data, dtype=np.float32)
@@ -216,7 +235,7 @@ class CollectorIOClient:
                 iq_frame = {
                     "frame_id": frame_id,
                     "timestamp": timestamp,
-                    "center_freq": self._center_freq,
+                    "center_freq": center_freq,  # 从帧头解析，不再从 config 注入
                     "sample_rate": self._sample_rate,
                     "iq_data": iq_complex.astype(np.complex64),
                 }
