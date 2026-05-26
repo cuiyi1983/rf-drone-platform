@@ -226,7 +226,6 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             final_detections.append({
                 'model': classification['class_name'],
                 'confidence': float(np.clip(det['confidence'] * classification['confidence'], 0, 1)),
-                'frequency': det['confidence'],  # Stage1 raw confidence
                 'stage1_conf': float(det['confidence']),
                 'stage2_class': classification['class_name'],
                 'stage2_conf': float(classification['confidence']),
@@ -236,10 +235,24 @@ class RFUAVTwoStageComponent(IInferenceComponent):
 
         t_total = time.perf_counter() - t_start
 
+        # 计算信号功率（dB）
+        rms = np.sqrt(np.mean(np.abs(iq_data)**2))
+        power_db = float(20 * np.log10(rms + 1e-10))
+
+        # 频点（Hz → MHz）
+        center_freq = iq_frame.get('center_freq', 0)
+        center_freq_mhz = float(center_freq / 1e6) if center_freq else 0.0
+
+        # 推理设备
+        device = self._device or 'cpu'
+
         # Build result
         result = {
             'frame_id': frame_id,
             'detections': final_detections,
+            'center_freq_mhz': center_freq_mhz,
+            'power_db': power_db,
+            'device': device,
             'debug': {
                 'inference_time_ms': t_total * 1000,
                 'stft_time_ms': (t_stft_end - t_stft) * 1000,
