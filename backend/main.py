@@ -546,8 +546,10 @@ class Platform:
                 collector_mode = "repeater"
             else:
                 collector_mode = "pluto"
-            # repeater 模式强制使用 UDP（无 TCP 流量控制问题）
-            if collector_mode == "repeater":
+            # 非 TCP 模式强制使用 UDP（无 TCP 队列积压和连接时序问题）
+            # repeater 模式: 始终 UDP
+            # pluto 模式: 改为 UDP，避免 TCP send buffer 阻塞 collector 线程
+            if collector_mode != "tcp":
                 config = {**config, "collector_type": "udp"}
 
             resp = await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/start", json={
