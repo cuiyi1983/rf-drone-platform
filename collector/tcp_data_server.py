@@ -48,7 +48,7 @@ TCP_DATA_PORT = 6103
 UDP_DATA_PORT = 6104  # UDP 数据端口（无 TCP 流量控制问题）
 
 # UDP 分片参数
-_UDP_MAX_PAYLOAD = 60 * 1024  # 每 UDP 包 payload 60KB（留头部空间）
+_UDP_MAX_PAYLOAD = 8192  # 每 UDP 包 payload 8KB（避免云服务器 208KB buffer 溢出丢包）
 # _UDP_FRAG_HDR_SIZE removed - use _UDP_FRAG_HDR_SIZE or _UDP_FIRST_FRAG_HDR_SIZE
 _UDP_MAX_FRAGS = 256  # 每帧最大分片数
 
