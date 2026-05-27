@@ -68,11 +68,11 @@ def iq_to_spectrogram(iq_data: np.ndarray, target_height: int = 640, target_widt
         window_f = window.astype(np.float32)
         stft_matrix[:, i] = np.fft.fft(segment * window_f)
 
-    # Apply fftshift to move zero frequency to center (matching training config)
-    stft_matrix = np.fft.fftshift(stft_matrix, axes=0)
-
-    # Take magnitude (only first half for positive frequencies)
+    # Take magnitude (only first half for positive frequencies, matching training config)
     stft_matrix = np.abs(stft_matrix[:NPERSEG // 2 + 1, :])
+
+    # Apply fftshift AFTER taking magnitude to move zero frequency to center
+    stft_matrix = np.fft.fftshift(stft_matrix, axes=0)
 
     # Compute power spectrogram (magnitude squared)
     power = stft_matrix ** 2
