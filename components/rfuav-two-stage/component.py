@@ -8,6 +8,7 @@ Implements IInferenceComponent interface.
 """
 
 import logging
+import threading
 import os
 import sys
 import time
@@ -80,6 +81,98 @@ class RFUAVTwoStageComponent(IInferenceComponent):
         self._stage1: Optional[Stage1Infer] = None
         self._stage2: Optional[Stage2Infer] = None
         self._models_dir = None
+        self._logging_active = False
+        self._log_dir = None
+        self._log_fh_inf = None
+        self._log_fh_yolo = None
+        self._log_fh_stage2 = None
+        self._log_frame_count = 0
+        self._log_session_id = None
+        self._stats_total = 0
+        self._stats_s1_frames = 0
+        self._stats_model_dist = {}
+        self._log_lock = threading.Lock()
+
+
+    # --- Debug logging ---
+    def _ensure_logging(self):
+        if self._logging_active:
+            return
+        with self._log_lock:
+            if self._logging_active:
+                return
+            import time as _t, json as _j
+            ts = _t.strftime("%Y-%m-%d_%H-%M-%S")
+            sid = "session_" + ts
+            logdir = os.path.join(os.path.dirname(__file__), "logs", ts + "_" + sid)
+            os.makedirs(logdir, exist_ok=True)
+            self._log_fh_inf = open(os.path.join(logdir, "inference.log"), "w")
+            self._log_fh_inf.write("frame_id,S1_detections,S1_conf_max,S1_total_boxes,stage2_class,stage2_conf,noise_prob,power_dBm,stft_shape\n")
+            self._log_fh_yolo = open(os.path.join(logdir, "yolo_raw.jsonl"), "w")
+            self._log_fh_stage2 = open(os.path.join(logdir, "stage2_raw.jsonl"), "w")
+            self._logging_active = True
+            self._log_dir = logdir
+            self._log_session_id = sid
+            self._log_frame_count = 0
+            self._stats_total = 0
+            self._stats_s1_frames = 0
+            self._stats_model_dist = {}
+            logger.info("[rfuav-two-stage] Debug logging started: " + logdir)
+
+    def _write_log(self, frame_id, s1_detections, final_detections, power_db, spec_shape, yolo_raw=None, s2_raw=None):
+        if not self._logging_active:
+            return
+        import json as _j
+        s1c = len(s1_detections)
+        s1mx = float(max([d["confidence"] for d in s1_detections], default=0.0))
+        if final_detections:
+            b = final_detections[0]
+            s2cls = b["stage2_class"]
+            s2conf = b["stage2_conf"]
+            nprob = 1.0 - s2conf
+        else:
+            s2cls = "noise"
+            s2conf = 0.0
+            nprob = 1.0
+        self._log_fh_inf.write(str(frame_id) + "," + str(s1c) + "," + ("%.4f" % s1mx) + "," + str(s1c) + "," + s2cls + "," + ("%.4f" % s2conf) + "," + ("%.4f" % nprob) + "," + ("%.2f" % power_db) + "," + str(spec_shape) + "\n")
+        if yolo_raw:
+            self._log_fh_yolo.write(_j.dumps({"frame_id": frame_id, **yolo_raw}) + "\n")
+        if s2_raw:
+            self._log_fh_stage2.write(_j.dumps({"frame_id": frame_id, **s2_raw}) + "\n")
+        self._log_frame_count += 1
+        if self._log_frame_count % 10 == 0:
+            self._log_fh_inf.flush()
+            self._log_fh_yolo.flush()
+            self._log_fh_stage2.flush()
+        self._stats_total += 1
+        if s1c > 0:
+            self._stats_s1_frames += 1
+        if final_detections:
+            m = final_detections[0]["stage2_class"]
+            self._stats_model_dist[m] = self._stats_model_dist.get(m, 0) + 1
+
+    def _stop_logging(self):
+        if not self._logging_active:
+            return
+        import json as _j
+        with self._log_lock:
+            if not self._logging_active:
+                return
+            self._logging_active = False
+            self._log_fh_inf.close()
+            self._log_fh_yolo.close()
+            self._log_fh_stage2.close()
+            tot = self._stats_total
+            s1r = self._stats_s1_frames / tot if tot > 0 else 0.0
+            summary = {"session_id": self._log_session_id, "total_frames": tot,
+                       "S1_detection_rate": round(s1r, 4), "model_distribution": self._stats_model_dist}
+            with open(os.path.join(self._log_dir, "summary.json"), "w") as f:
+                _j.dump(summary, f, indent=2)
+            logger.info("[rfuav-two-stage] Debug logging stopped: " + self._log_dir)
+            self._log_dir = None
+            self._log_fh_inf = None
+            self._log_fh_yolo = None
+            self._log_fh_stage2 = None
 
     # --- IInferenceComponent implementation ---
 
@@ -177,6 +270,8 @@ class RFUAVTwoStageComponent(IInferenceComponent):
         if not self._initialized:
             raise RuntimeError("Component not initialized. Call initialize() first.")
 
+        self._ensure_logging()
+
         t_start = time.perf_counter()
 
         # Extract IQ data
@@ -264,10 +359,13 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             }
         }
 
+        self._write_log(frame_id, stage1_detections, final_detections, power_db, spectrogram.shape, None, None)
+
         return result
 
     def release(self) -> None:
         """Release model resources."""
+        self._stop_logging()
         self._stage1 = None
         self._stage2 = None
         self._initialized = False
