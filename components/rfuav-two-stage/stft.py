@@ -68,21 +68,20 @@ def iq_to_spectrogram(iq_data: np.ndarray, target_height: int = 640, target_widt
         window_f = window.astype(np.float32)
         stft_matrix[:, i] = np.fft.fft(segment * window_f)
 
-    # Apply fftshift to move zero frequency to center (on full 1024 bins)
-    stft_matrix = np.fft.fftshift(stft_matrix, axes=0)
-
-    # Take magnitude (only first half after fftshift = negative freq to +fs/2)
+    # Take magnitude (only first half for positive frequencies)
     stft_matrix = np.abs(stft_matrix[:NPERSEG // 2 + 1, :])
 
-    # Convert to dB scale (amplitude dB, matching training amp_type: dB)
-    # 10*log10(|Z|) not 10*log10(|Z|^2) = 20*log10(|Z|)
-    spectrogram_db = 10 * np.log10(stft_matrix + 1e-10)
+    # Compute power spectrogram (magnitude squared)
+    power = stft_matrix ** 2
 
-    # Normalize to 0-255 (minmax, matching training config)
-    spec_min = spectrogram_db.min()
-    spec_max = spectrogram_db.max()
-    spectrogram_norm = (spectrogram_db - spec_min) / (spec_max - spec_min + 1e-10)
-    spectrogram = (spectrogram_norm * 255).astype(np.uint8)
+    # Convert to dB scale: 10*log10(|Z|^2) = 20*log10(|Z|) - confirmed CORRECT by AB test
+    power_db = 10 * np.log10(power + 1e-10)
+
+    # Normalize to 0-255 (percentile-based per-frame, original behavior)
+    p_min = np.percentile(power_db, 1)
+    p_max = np.percentile(power_db, 99)
+    power_db_norm = np.clip((power_db - p_min) / (p_max - p_min + 1e-10), 0, 1)
+    spectrogram = (power_db_norm * 255).astype(np.uint8)
 
     # Resize to target size using bilinear interpolation
     h_scale = target_height / spectrogram.shape[0]
