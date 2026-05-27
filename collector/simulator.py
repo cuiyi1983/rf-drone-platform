@@ -144,7 +144,7 @@ class IQSimulator:
         iq[0::2] = chunk.real.astype(np.float32)
         iq[1::2] = chunk.imag.astype(np.float32)
         result = iq.tobytes()
-        time.sleep(0.3)  # Repeater 模式流控：300ms/帧（300ms间隔约3fps，给予推理组件充足处理时间）
+        time.sleep(1.0)  # Repeater 模式流控：300ms/帧（300ms间隔约3fps，给予推理组件充足处理时间）
         return result
 
     @property
