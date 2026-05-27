@@ -183,6 +183,7 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             "version": "1.0.0",
             "description": "Two-stage RF drone detection (YOLO + ResNet152)",
             "collector_requirements": {
+                "buffer_size": 600000,
                 "min_data_points": 600000,
             },
             "io": {
@@ -395,7 +396,8 @@ COMPONENT_ENTRY = {
             "author": "RFUAV Team"
         },
         "collector_requirements": {
-            "min_data_points": 600000
+                "min_data_points": 600000,
+                "buffer_size": 600000,
         },
         "io": {
             "input": {

@@ -29,6 +29,11 @@ async def start_session(request: dict) -> dict:
 
     component_id = request.get("component_id")
     config = request.get("config", {})
+    # Merge top-level fields into config for collector_type/iq_file_path pass-through
+    for _field in ["collector_type", "iq_file_path", "loop_play"]:
+        if _field in request and request[_field] is not None:
+            config[_field] = request[_field]
+
 
     if not component_id:
         raise HTTPException(status_code=400, detail="component_id is required")

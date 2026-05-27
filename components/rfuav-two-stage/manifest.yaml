@@ -7,6 +7,7 @@ author: RFUAV Team
 
 collector_requirements:
   min_data_points: 600000   # Model requires 10ms × 60MHz = 600k IQ points
+  buffer_size: 600000       # Collector must send exactly 600k IQ samples per frame
 
 io:
   input:
