@@ -50,12 +50,11 @@ def iq_to_spectrogram(iq_data: np.ndarray, target_height: int = 640, target_widt
     else:
         raise ValueError(f"IQ data too short: {len(iq_data)} < 600000 (min required)")
 
-    # Compute STFT
+    # Compute STFT manually: two-sided FFT (matching scipy.signal.stft behavior)
+    # Then apply fftshift to align with training (scipy stft returns [-fs/2, +fs/2])
     window = get_window()
     n_frames = (len(iq_data) - NPERSEG) // HOP + 1
 
-    # Compute STFT manually to get (n_freq_bins, n_frames)
-    # Use full FFT since IQ data is complex; we'll take magnitude later
     stft_matrix = np.zeros((NPERSEG, n_frames), dtype=np.complex64)
 
     for i in range(n_frames):
@@ -68,20 +67,25 @@ def iq_to_spectrogram(iq_data: np.ndarray, target_height: int = 640, target_widt
         window_f = window.astype(np.float32)
         stft_matrix[:, i] = np.fft.fft(segment * window_f)
 
-    # Take magnitude (only first half for positive frequencies)
+    # Apply fftshift to get negative frequencies first (matching training behavior)
+    stft_matrix = np.fft.fftshift(stft_matrix, axes=0)
+
+    # Take magnitude: first 513 bins = negative frequencies + DC (matching training)
     stft_matrix = np.abs(stft_matrix[:NPERSEG // 2 + 1, :])
 
     # Compute power spectrogram (magnitude squared)
     power = stft_matrix ** 2
 
-    # Convert to dB scale: 10*log10(|Z|^2) = 20*log10(|Z|) - confirmed CORRECT by AB test
+    # Convert to dB scale: 10*log10(|Z|^2) = 20*log10(|Z|)
     power_db = 10 * np.log10(power + 1e-10)
 
-    # Normalize to 0-255 (percentile-based per-frame, original behavior)
-    p_min = np.percentile(power_db, 1)
-    p_max = np.percentile(power_db, 99)
-    power_db_norm = np.clip((power_db - p_min) / (p_max - p_min + 1e-10), 0, 1)
-    spectrogram = (power_db_norm * 255).astype(np.uint8)
+    # Normalize to 0-255: global min-max (matching training iq_to_spectrogram_db)
+    v_min = power_db.min()
+    v_max = power_db.max()
+    if v_max > v_min:
+        spectrogram = ((power_db - v_min) / (v_max - v_min) * 255).astype(np.uint8)
+    else:
+        spectrogram = np.zeros_like(power_db, dtype=np.uint8)
 
     # Resize to target size using bilinear interpolation
     h_scale = target_height / spectrogram.shape[0]
