@@ -35,6 +35,7 @@ import struct
 import logging
 import threading
 import socket
+import select
 import time
 import queue
 from typing import Optional, Tuple
@@ -50,7 +51,7 @@ UDP_DATA_PORT = 6104  # UDP 数据端口（无 TCP 流量控制问题）
 # UDP 分片参数
 _UDP_MAX_PAYLOAD = 8192  # 每 UDP 包 payload 8KB（避免云服务器 208KB buffer 溢出丢包）
 # _UDP_FRAG_HDR_SIZE removed - use _UDP_FRAG_HDR_SIZE or _UDP_FIRST_FRAG_HDR_SIZE
-_UDP_MAX_FRAGS = 520  # 每帧最大分片数
+_UDP_MAX_FRAGS = 650  # 每帧最大分片数
 
 # TCP 帧头格式：frame_id(8) + timestamp(8) + data_len(4) + center_freq(8) = 28 bytes
 _TCP_FRAME_HEADER_FMT = "!QdIQ"  # big-endian: uint64, double, uint32, uint64
@@ -65,7 +66,7 @@ _UDP_FRAG_FMT = "!QII dI"  # frame_id + frag_idx + total_frags + timestamp + dat
 _UDP_FRAG_HDR_SIZE = struct.calcsize(_UDP_FRAG_FMT)
 
 # 帧队列最大长度（超过则丢帧）
-_MAX_FRAME_QUEUE = 100
+_MAX_FRAME_QUEUE = 500
 
 
 class TCPDataServer:
@@ -196,19 +197,39 @@ class TCPDataServer:
 
                 for client in self._clients:
                     try:
-                        # 设置大 send buffer + 1s 超时
+                        # 设置大 send buffer
                         client.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16 * 1024 * 1024)
-                        client.settimeout(1.0)
-                        sent = client.send(packet)
-                        if sent < packet_len:
+                        # 使用 select 等待 socket 可写，最长等待 0.5s
+                        # 超时则丢帧，避免永久卡死导致后续帧积压
+                        readable, writable, exceptional = select.select([], [client], [client], 0.5)
+                        if not writable or exceptional:
+                            # 超时或异常，丢帧
                             self._total_dropped_frames += 1
-                    except socket.timeout:
-                        self._total_dropped_frames += 1
-                        if self._total_dropped_frames == 1 or self._total_dropped_frames % 1000 == 0:
-                            logger.warning(
-                                f"[TCPDataServer] 发送超时（已丢 {self._total_dropped_frames} 帧），"
-                                f"接收端消费速度跟不上"
-                            )
+                            if self._total_dropped_frames <= 5 or self._total_dropped_frames % 1000 == 0:
+                                logger.warning(
+                                    f"[TCPDataServer] 发送超时（已丢 {self._total_dropped_frames} 帧），"
+                                    f"接收端消费速度跟不上"
+                                )
+                            continue
+                        # socket 可写，尝试发送（blocking send）
+                        try:
+                            sent = client.send(packet)
+                            if sent < packet_len:
+                                self._total_dropped_frames += 1
+                                if self._total_dropped_frames <= 5 or self._total_dropped_frames % 1000 == 0:
+                                    logger.warning(
+                                        f"[TCPDataServer] 发送不完整（已丢 {self._total_dropped_frames} 帧），"
+                                        f"接收端消费速度跟不上"
+                                    )
+                            else:
+                                self._total_frames_sent += 1
+                        except BlockingIOError:
+                            self._total_dropped_frames += 1
+                            if self._total_dropped_frames <= 5 or self._total_dropped_frames % 1000 == 0:
+                                logger.warning(
+                                    f"[TCPDataServer] 发送阻塞（已丢 {self._total_dropped_frames} 帧），"
+                                    f"接收端消费速度跟不上"
+                                )
                     except Exception:
                         clients_to_remove.append(client)
 

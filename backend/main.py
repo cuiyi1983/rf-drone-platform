@@ -294,7 +294,7 @@ class Platform:
 
         # 建立数据通道（全部 UDP，删除 TCP）
         # UDP 无连接，无队列积压，无发送超时问题
-        collector_type = "udp"
+        collector_type = "tcp"
         collector_io = CollectorIOClient(
             collector_host=collector_host,
             tcp_port=6103,
@@ -544,7 +544,7 @@ class Platform:
             else:
                 collector_mode = "pluto"
             # 全部使用 UDP（删除 TCP 路径）
-            config = {**config, "collector_type": "udp"}
+            config = {**config, "collector_type": "tcp"}
 
             resp = await asyncio.to_thread(self._requests.post, f"{self._collector_base_url}/api/v1/collector/start", json={
                 "session_id": session_id,

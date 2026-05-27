@@ -106,7 +106,7 @@ class CollectorIOClient:
         """创建 UDP socket 并向 Collector 注册本端端口"""
         try:
             self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16 * 1024 * 1024)  # 16MB recv buffer
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 128 * 1024 * 1024)  # 16MB recv buffer
             self._sock.bind(("0.0.0.0", 0))  # 自动分配端口
             self._local_udp_port = self._sock.getsockname()[1]
             logger.info(f"CollectorIOClient[UDP]: 已绑定到端口 {self._local_udp_port}")
@@ -137,30 +137,49 @@ class CollectorIOClient:
         logger.info("CollectorIOClient: 已断开")
 
     def _tcp_recv_loop(self) -> None:
-        """从 TCP socket 持续读取二进制 IQ 数据帧"""
+        """从 TCP socket 持续读取二进制 IQ 数据帧（不使用 MSG_WAITALL）"""
+        self._sock.settimeout(0.5)  # 外层超时兜底
         while self._running:
             try:
-                header = self._sock.recv(_TCP_FRAME_SIZE, socket.MSG_WAITALL)
+                # 读取帧头（28 bytes），分片接收直到完整
+                header = b""
+                while len(header) < _TCP_FRAME_SIZE and self._running:
+                    try:
+                        chunk = self._sock.recv(_TCP_FRAME_SIZE - len(header))
+                        if not chunk:
+                            break
+                        header += chunk
+                    except socket.timeout:
+                        if len(header) > 0:
+                            logger.warning("CollectorIOClient[TCP]: 帧头接收超时，丢弃 %d bytes", len(header))
+                        header = b""
+                        continue
                 if not header or len(header) < _TCP_FRAME_SIZE:
                     continue
 
                 frame_id, timestamp, data_len, center_freq = struct.unpack(_TCP_FRAME_FMT, header)
                 byte_count = data_len * _SAMPLE_SIZE
+
+                # 按 body 长度接收数据，每次最多 64KB，逐步累加
                 data = b""
-                while len(data) < byte_count:
-                    chunk = self._sock.recv(byte_count - len(data), socket.MSG_WAITALL)
-                    if not chunk:
+                while len(data) < byte_count and self._running:
+                    try:
+                        remaining = byte_count - len(data)
+                        chunk = self._sock.recv(min(remaining, 65536))
+                        if not chunk:
+                            break
+                        data += chunk
+                    except socket.timeout:
+                        logger.warning("CollectorIOClient[TCP]: 数据接收超时 frame_id=%d, got %d/%d",
+                                      frame_id, len(data), byte_count)
+                        data = b""  # 丢弃不完整帧
                         break
-                    data += chunk
 
                 if len(data) < byte_count:
-                    logger.warning("CollectorIOClient[TCP]: 数据不完整，丢弃帧 %d", frame_id)
-                    continue
+                    continue  # 超时后已丢弃
 
                 self._deliver_frame(frame_id, timestamp, data, center_freq)
 
-            except socket.timeout:
-                continue
             except Exception as e:
                 if self._running:
                     logger.debug(f"CollectorIOClient[TCP]: recv error: {e}")
