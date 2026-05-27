@@ -44,7 +44,7 @@ class DeviceCapabilities:
     sample_rate_fixed: int = 60_000_000
     rf_bandwidth_fixed: int = 56_000_000
     default_frequency: int = 5_805_000_000
-    default_buffer_size: int = 524_288
+    default_buffer_size: int = 600_000
     default_gain: float = 20.0
 
 
