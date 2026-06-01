@@ -193,10 +193,16 @@ class CollectorAPI:
                 return _json(400, f"Invalid mode: {mode}")
 
             raw_config = body.get("config", {})
-            # Normalise frequencies – accept ints or float strings
-            raw_freqs = raw_config.get("frequencies", [5_805_000_000])
+            # Normalise frequencies - accept both "frequency" (singular) and "frequencies" (plural)
+            # Support singular "frequency" from frontend; normalize to list
+            if raw_config.get("frequencies"):
+                raw_freqs = raw_config.get("frequencies")
+            elif raw_config.get("frequency"):
+                raw_freqs = [raw_config.get("frequency")]
+            else:
+                raw_freqs = [5_805_000_000]
             frequencies = [int(f) for f in raw_freqs]
-            # C-2: support device_uri from config for auto-connect-on-start
+
             device_uri = raw_config.get("device_uri") or None
             # Support iq_file_path for repeater mode
             iq_file_path = raw_config.get("iq_file_path") or None
