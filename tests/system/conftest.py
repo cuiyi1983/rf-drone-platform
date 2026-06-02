@@ -30,7 +30,6 @@ def ensure_services():
     started = {"collector": False, "platform": False}
     pids = {}
 
-    # Check if already running
     collector_ready = is_service_ready(COLLECTOR_URL, "/api/v1/collector/health")
     platform_ready = is_service_ready(PLATFORM_URL, "/health")
 
@@ -38,17 +37,15 @@ def ensure_services():
     venv_python = os.path.join(base_dir, ".venv", "bin", "python3")
 
     if not collector_ready:
-        print("\n[conftest] Starting Collector (5101) with COLLECTOR_DEVICE_IMPL=mock...")
+        print("\n[conftest] Starting Collector (5101)...")
         col_proc = subprocess.Popen(
-            [venv_python, -m, collector.api, "--port", "5101"],
+            [venv_python, "-m", "collector.api", "--port", "5101"],
             cwd=base_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={**os.environ, "COLLECTOR_DEVICE_IMPL": "mock"},
         )
         pids["collector"] = col_proc
         started["collector"] = True
-        # Wait for collector
         for _ in range(15):
             time.sleep(1)
             if is_service_ready(COLLECTOR_URL, "/api/v1/collector/health"):
@@ -58,15 +55,13 @@ def ensure_services():
     if not platform_ready:
         print("\n[conftest] Starting Platform (5100)...")
         plt_proc = subprocess.Popen(
-            [venv_python, -m, uvicorn, "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
+            [venv_python, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
             cwd=base_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={**os.environ, "COLLECTOR_DEVICE_IMPL": "mock"},
         )
         pids["platform"] = plt_proc
         started["platform"] = True
-        # Wait for platform
         for _ in range(15):
             time.sleep(1)
             if is_service_ready(PLATFORM_URL, "/health"):
@@ -75,7 +70,6 @@ def ensure_services():
 
     yield
 
-    # Teardown: only kill processes WE started
     for name, proc in pids.items():
         if started.get(name) and proc.poll() is None:
             print(f"\n[conftest] Stopping {name} (pid={proc.pid})")

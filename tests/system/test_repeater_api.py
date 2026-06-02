@@ -31,7 +31,6 @@ def ensure_services():
         os.system("fuser -k 5100/tcp 2>/dev/null; fuser -k 5101/tcp 2>/dev/null")
         time.sleep(1)
         env = os.environ.copy()
-        env["COLLECTOR_DEVICE_IMPL"] = "mock"
         subprocess.Popen(
             [venv_python, "-m", "collector.api", "--port", "5101"],
             cwd=base, stdout=open("/tmp/collector.log","w"), stderr=subprocess.STDOUT, env=env)
@@ -103,7 +102,7 @@ def test_repeater_session_lifecycle(ensure_services, stop_active_sessions):
 
     # Step 3: Start session
     r = requests.post(f"{PLATFORM_URL}/api/v1/session/start",
-        json={"component_id": "sim-inference"}, timeout=10)
+        json={"component_id": "sim-inference", "config": {"iq_file_path": "IQ-Record/noise_5db_600k.bin"}}, timeout=10)
     assert r.status_code == 200, f"session start failed: {r.text}"
     assert r.json().get("status") == "running", f"session start error: {r.json()}"
     session_id = r.json().get("session_id")
@@ -116,7 +115,7 @@ def test_repeater_session_lifecycle(ensure_services, stop_active_sessions):
         r = requests.get(f"{PLATFORM_URL}/api/v1/session/{session_id}/latest_result", timeout=5)
         if r.status_code == 200:
             data = r.json()
-            if data.get("result", {}).get("debug", {}).get("total_inference_count", 0) > 0:
+            if (data.get("result") or {}).get("debug", {}).get("total_inference_count", 0) > 0:
                 result_found = True
                 assert data.get("result") is not None
                 break
