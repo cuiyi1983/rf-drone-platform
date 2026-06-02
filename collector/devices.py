@@ -6,6 +6,7 @@ Real hardware is swapped for a mock via DEVICE_IMPL config.
 """
 
 from __future__ import annotations
+import os
 
 import logging
 from abc import ABC, abstractmethod
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Device configuration
 # -----------------------------------------------------------------------------
 # Override with "mock" for unit testing only (never in production)
-DEVICE_IMPL: str = "pluto"
+DEVICE_IMPL: str = os.environ.get("COLLECTOR_DEVICE_IMPL", "pluto")
 
 
 # -----------------------------------------------------------------------------
