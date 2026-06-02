@@ -35,14 +35,16 @@ def ensure_services():
     platform_ready = is_service_ready(PLATFORM_URL, "/health")
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    venv_python = os.path.join(base_dir, ".venv", "bin", "python3")
 
     if not collector_ready:
-        print("\n[conftest] Starting Collector (5101)...")
+        print("\n[conftest] Starting Collector (5101) with COLLECTOR_DEVICE_IMPL=mock...")
         col_proc = subprocess.Popen(
-            [sys.executable, "-m", "collector.api", "--port", "5101"],
+            [venv_python, -m, collector.api, "--port", "5101"],
             cwd=base_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env={**os.environ, "COLLECTOR_DEVICE_IMPL": "mock"},
         )
         pids["collector"] = col_proc
         started["collector"] = True
@@ -56,10 +58,11 @@ def ensure_services():
     if not platform_ready:
         print("\n[conftest] Starting Platform (5100)...")
         plt_proc = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
+            [venv_python, -m, uvicorn, "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
             cwd=base_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env={**os.environ, "COLLECTOR_DEVICE_IMPL": "mock"},
         )
         pids["platform"] = plt_proc
         started["platform"] = True

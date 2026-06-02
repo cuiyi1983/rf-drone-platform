@@ -24,7 +24,8 @@ def is_ready(url, path="/health", timeout=3):
 
 @pytest.fixture(scope="module")
 def ensure_services():
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    venv_python = os.path.join(base, ".venv", "bin", "python3")
     if not is_ready(COLLECTOR_URL, "/api/v1/collector/health") or not is_ready(PLATFORM_URL):
         print("\n[conftest] Starting services...")
         os.system("fuser -k 5100/tcp 2>/dev/null; fuser -k 5101/tcp 2>/dev/null")
@@ -32,10 +33,10 @@ def ensure_services():
         env = os.environ.copy()
         env["COLLECTOR_DEVICE_IMPL"] = "mock"
         subprocess.Popen(
-            [sys.executable, "-m", "collector.api", "--port", "5101"],
+            [venv_python, "-m", "collector.api", "--port", "5101"],
             cwd=base, stdout=open("/tmp/collector.log","w"), stderr=subprocess.STDOUT, env=env)
         subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
+            [venv_python, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
             cwd=base, stdout=open("/tmp/platform.log","w"), stderr=subprocess.STDOUT)
         time.sleep(8)
 
@@ -94,7 +95,7 @@ def test_repeater_session_lifecycle(ensure_services, stop_active_sessions):
 
     # Step 2: Connect collector with pluto-repeater
     r = requests.post(f"{PLATFORM_URL}/api/v1/collector/connect", json={
-        "device_uri": "pluto-repeater",
+        "device_uri": "file:iq_recording.bin",
     }, timeout=10)
     assert r.status_code == 200, f"collector connect failed: {r.text}"
     assert r.json().get("code") == 0, f"collector connect error: {r.json()}"

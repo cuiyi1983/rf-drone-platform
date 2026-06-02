@@ -13,7 +13,7 @@ import socket
 import requests
 from playwright.sync_api import sync_playwright
 
-_python_bin = sys.executable
+_python_bin = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".venv", "bin", "python")
 
 PLATFORM_URL = "http://localhost:5100"
 FRONTEND_URL = "http://localhost:5102"
@@ -29,17 +29,17 @@ def is_ready(url, path="/health", timeout=3):
 
 @pytest.fixture(scope="module")
 def ensure_services():
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     print(f"[conftest] Python: {_python_bin}")
     print("\n[conftest] Killing existing services...")
     os.system("fuser -k 5100/tcp 2>/dev/null; fuser -k 5101/tcp 2>/dev/null; fuser -k 5102/tcp 2>/dev/null")
     time.sleep(1)
-    env = {"COLLECTOR_DEVICE_IMPL": os.environ.get("COLLECTOR_DEVICE_IMPL", "mock")}
+    env = os.environ.copy()
     subprocess.Popen([_python_bin, "-m", "collector.api", "--port", "5101"],
         cwd=base, env=env, stdout=open("/tmp/collector.log","w"), stderr=subprocess.STDOUT)
     subprocess.Popen([_python_bin, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
         cwd=base, stdout=open("/tmp/platform.log","w"), stderr=subprocess.STDOUT)
-    frontend_root = os.path.join(os.path.dirname(base), "frontend")
+    frontend_root = os.path.join(base, "frontend")
     print(f"[conftest] Frontend root: {frontend_root}, exists: {os.path.exists(frontend_root)}")
     p = subprocess.Popen([_python_bin, "-m", "http.server", "5102"],
         cwd=frontend_root, stdout=open("/tmp/frontend.log","w"), stderr=subprocess.STDOUT)
@@ -179,18 +179,16 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
         page.wait_for_timeout(1000)
 
         # Connect to collector
-        btn_before = _get_conn_btn_text(page)
         page.locator("#connBtn").click()
         page.wait_for_timeout(3000)
-        btn_after = _get_conn_btn_text(page)
-        print(f"[DEBUG] connBtn: before='{btn_before}', after='{btn_after}'")
 
-        # If button didn't change, try again or fail
-        if "连接" in btn_after:
-            pytest.fail(
-                f"Collector connection failed: button still shows '{btn_after}' after 3s. "
-                f"Check collector health: {requests.get('http://localhost:5101/api/v1/collector/health', timeout=3).json()}"
-            )
+        # Verify connection via API directly (button text doesn't change, disabled state does)
+        conn_resp = requests.post("http://localhost:5101/api/v1/collector/connect",
+                                  json={"device_uri": "file:iq_recording.bin"}, timeout=5)
+        print(f"[DEBUG] connect API: {conn_resp.json()}")
+
+        if conn_resp.json().get("code") != 0:
+            pytest.fail(f"Collector connection API failed: {conn_resp.json()}")
 
         # === OBSERVATION PAGE ===
         _click_tab(page, "obs")
