@@ -34,7 +34,7 @@ def ensure_services():
     collector_ready = is_service_ready(COLLECTOR_URL, "/api/v1/collector/health")
     platform_ready = is_service_ready(PLATFORM_URL, "/health")
 
-    base_dir = "/home/ubuntu/rf-drone-platform-test"
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     if not collector_ready:
         print("\n[conftest] Starting Collector (5101)...")
