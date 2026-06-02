@@ -13,7 +13,6 @@ import socket
 import requests
 from playwright.sync_api import sync_playwright
 
-# Use the same Python that runs pytest (venv-aware)
 _python_bin = sys.executable
 
 PLATFORM_URL = "http://localhost:5100"
@@ -81,6 +80,19 @@ def stop_active_sessions():
     cleanup(); yield; cleanup()
 
 
+def _click_tab(page, tab_name):
+    """Click a nav tab by its data-pg attribute."""
+    page.evaluate(
+        f"document.querySelector('#tabs .nav-link[data-pg=\"{tab_name}\"]').click()"
+    )
+
+def _get_conn_btn_text(page):
+    """Get the connect button's current text."""
+    try:
+        return page.locator("#connBtn").inner_text()
+    except:
+        return "(not found)"
+
 def test_page_loads(ensure_services):
     """TC-SYS-02.1: Web UI loads successfully."""
     with sync_playwright() as p:
@@ -100,10 +112,10 @@ def test_navbar_tabs(ensure_services):
         page = browser.new_page()
         page.goto(FRONTEND_URL, wait_until="domcontentloaded", timeout=15000)
         assert page.locator("#pg-obs").is_visible()
-        page.evaluate('document.querySelector("#tabs .nav-link[data-pg=\\"cfg\\"]").click()')
+        _click_tab(page, "cfg")
         page.wait_for_timeout(500)
         assert page.locator("#pg-cfg").is_visible()
-        page.evaluate('document.querySelector("#tabs .nav-link[data-pg=\\"obs\\"]").click()')
+        _click_tab(page, "obs")
         page.wait_for_timeout(500)
         assert page.locator("#pg-obs").is_visible()
         browser.close()
@@ -112,28 +124,25 @@ def test_navbar_tabs(ensure_services):
 def test_repeater_session_stats(ensure_services, stop_active_sessions):
     """
     TC-SYS-02.3: Start repeater session via UI with sim-inference + noise file,
-    then verify ALL stats in the observation page:
-
-      - 实时推理统计表: 检测结果=NOISE, Drone%%=0.0%%, 推理ms!=空
-      - 缓冲区监控: 总帧数持续增加, 采集状态=采集中
-      - 当前配置: 推理组件=sim-inference
+    then verify inference output appears in the observation table.
     """
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         page.goto(FRONTEND_URL, wait_until="domcontentloaded", timeout=15000)
 
-        # === CONFIG PAGE: Select pluto-repeater, load sim-inference, connect ===
-        page.evaluate('document.querySelector("#tabs .nav-link[data-pg=\\"cfg\\"]").click()')
+        # === CONFIG PAGE ===
+        _click_tab(page, "cfg")
         page.wait_for_timeout(1000)
 
-        # Wait for device list
+        # Wait for device list to populate
         for _ in range(15):
             opts = page.locator("#deviceSel option").all_inner_texts()
-            if any("pluto-repeater" in o for o in opts): break
+            if opts and any("pluto" in o.lower() for o in opts):
+                break
             page.wait_for_timeout(1000)
         else:
-            pytest.fail(f"pluto-repeater not in device list: {opts}")
+            pytest.fail(f"Device list empty after 15s. Options: {page.locator('#deviceSel option').all_inner_texts()}")
 
         # Select pluto-repeater
         opt_vals = page.evaluate(
@@ -141,68 +150,71 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
             ".map(o=>({v:o.value,t:o.textContent}))"
         )
         rpt = next((o for o in opt_vals if "pluto-repeater" in o["v"].lower()), None)
-        assert rpt, f"pluto-repeater not found in options: {opt_vals}"
+        assert rpt, f"pluto-repeater not found in: {opt_vals}"
         page.locator("#deviceSel").select_option(rpt["v"])
         page.wait_for_timeout(800)
 
-        # IQ path auto-filled (noise file by default)
+        # IQ path auto-filled
         iq = page.locator("#iqFilePath").input_value()
         assert iq and "IQ-Record" in iq, f"IQ path not auto-filled: {iq}"
 
         # Load sim-inference component
         for _ in range(10):
             comp_opts = page.locator("#msel option").all_inner_texts()
-            if any("sim-inference" in o for o in comp_opts): break
+            if comp_opts and any("sim-inference" in o for o in comp_opts):
+                break
             page.wait_for_timeout(500)
         else:
-            pytest.fail(f"sim-inference not in component list: {comp_opts}")
+            pytest.fail(f"sim-inference not in component list: {page.locator('#msel option').all_inner_texts()}")
 
         comp_vals = page.evaluate(
             "Array.from(document.querySelectorAll('#msel option'))"
             ".map(o=>({v:o.value,t:o.textContent}))"
         )
         sim = next((o for o in comp_vals if "sim-inference" in o["v"].lower()), None)
-        assert sim, f"sim-inference not found: {comp_vals}"
+        assert sim, f"sim-inference not found in: {comp_vals}"
         page.locator("#msel").select_option(sim["v"])
         page.wait_for_timeout(300)
         page.locator("#mlbtn").click()
         page.wait_for_timeout(1000)
 
-        # Connect collector
+        # Connect to collector
+        btn_before = _get_conn_btn_text(page)
         page.locator("#connBtn").click()
-        page.wait_for_timeout(2000)
-        # Check if session is running
-        try:
-            session_status = page.locator("#session-status, .session-status, #connBtn").first.inner_text()
-            print(f"[DEBUG] After connect btn text: {session_status}")
-        except Exception as e:
-            print(f"[DEBUG] Could not read session status: {e}")
+        page.wait_for_timeout(3000)
+        btn_after = _get_conn_btn_text(page)
+        print(f"[DEBUG] connBtn: before='{btn_before}', after='{btn_after}'")
 
-        # === OBSERVATION PAGE: Start acquisition ===
-        page.evaluate('document.querySelector("#tabs .nav-link[data-pg=\"obs\"]").click()')
+        # If button didn't change, try again or fail
+        if "连接" in btn_after:
+            pytest.fail(
+                f"Collector connection failed: button still shows '{btn_after}' after 3s. "
+                f"Check collector health: {requests.get('http://localhost:5101/api/v1/collector/health', timeout=3).json()}"
+            )
+
+        # === OBSERVATION PAGE ===
+        _click_tab(page, "obs")
         page.wait_for_timeout(500)
-        page.locator("#btnS").click()
-        page.wait_for_timeout(1500)
-        # Diagnostic: check buffer status and btnS text
-        try:
-            buf_text = page.locator("#buf-frames, #buf-frames").first.inner_text()
-            btn_text = page.locator("#btnS, #btnX").first.inner_text()
-            table_text = page.locator("#rtbody").inner_text()[:100]
-            print(f"[DEBUG] After btnS: buf={buf_text}, btn={btn_text}, table={table_text}")
-        except Exception as e:
-            print(f"[DEBUG] Diagnostic error: {e}")
 
-        # Poll table for data rows (up to 12s)
+        # Start acquisition
+        btn_s_before = page.locator("#btnS").inner_text() if page.locator("#btnS").count() else "(no btn)"
+        page.locator("#btnS").click()
+        page.wait_for_timeout(2000)
+        btn_s_after = page.locator("#btnS, #btnX").first.inner_text()
+        buf_frames = page.locator("#buf-frames").inner_text() if page.locator("#buf-frames").count() else "(none)"
+        print(f"[DEBUG] After start: btn='{btn_s_after}', buf-frames={buf_frames}")
+
+        # Poll inference table
         data_found = False
         for i in range(24):
             page.wait_for_timeout(500)
-            table_text = page.locator("#rtbody").inner_text()[:200]
+            table_text = page.locator("#rtbody").inner_text()[:300]
             rows = page.locator("#rtbody tr").all()
             data_rows = [
                 r for r in rows
                 if "等待" not in r.inner_text() and "no-data" not in (r.get_attribute("class") or "")
             ]
-            print(f"[DEBUG] Poll {i}: rows={len(rows)}, data_rows={len(data_rows)}, table={table_text[:100]}")
+            print(f"[DEBUG] Poll {i}: {len(data_rows)} data rows, table={table_text[:100]}")
             if data_rows:
                 data_found = True
                 break
@@ -216,21 +228,18 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
 
         # 2. Detection result=NOISE, Drone%%=0.0%%
         rows = page.locator("#rtbody tr").all()
-        data_row = None
-        for r in rows:
-            txt = r.inner_text()
-            if "等待" not in txt and "no-data" not in (r.get_attribute("class") or ""):
-                data_row = r
-                break
-        assert data_row, "No data row found"
+        data_row = next(
+            (r for r in rows
+             if "等待" not in r.inner_text() and "no-data" not in (r.get_attribute("class") or "")),
+            None
+        )
+        assert data_row, "No data row after successful poll"
         cells = data_row.locator("td").all_inner_texts()
         is_drone_text = cells[3].strip() if len(cells) > 3 else ""
         drone_pct_text = cells[4].strip() if len(cells) > 4 else ""
-        assert is_drone_text == "NOISE", (
-            f"Detection result should be NOISE (noise file), got: {is_drone_text}"
-        )
+        assert is_drone_text == "NOISE", f"Detection should be NOISE, got: {is_drone_text}"
         drone_pct_val = float(re.sub(r'[^0-9.]', '', drone_pct_text))
-        assert drone_pct_val < 1.0, f"Drone%% should be ~0%% for noise, got: {drone_pct_text}"
+        assert drone_pct_val < 1.0, f"Drone%% should be ~0%%, got: {drone_pct_text}"
 
         # 3. Process time ms != empty
         page.locator('button.col-toggle[data-col="process_time_ms"]').click()
@@ -241,17 +250,14 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
         except ValueError:
             pytest.fail(f"推理ms column not found in header: {headers}")
         proc_text = data_row.locator("td").nth(proc_col_idx).inner_text().strip()
-        assert proc_text != "" and proc_text != "--", (
-            f"Process time should not be empty, got: '{proc_text}'"
-        )
-        assert "ms" in proc_text, f"Process time should contain 'ms', got: {proc_text}"
+        assert proc_text != "" and proc_text != "--", f"Process time empty: '{proc_text}'"
+        assert "ms" in proc_text, f"Process time should contain 'ms': {proc_text}"
 
         # 4. Buffer: frame count increases
-        frames_el = page.locator("#buf-frames")
-        f0 = int(frames_el.inner_text() or "0")
+        f0 = int(page.locator("#buf-frames").inner_text() or "0")
         page.wait_for_timeout(2000)
-        f1 = int(frames_el.inner_text() or "0")
-        assert f1 > f0, f"Frame count should increase: before={f0}, after={f1}"
+        f1 = int(page.locator("#buf-frames").inner_text() or "0")
+        assert f1 > f0, f"Frame count should increase: {f0} -> {f1}"
 
         # 5. Buffer: collection status=采集中
         coll_text = page.locator("#buf-coll").inner_text()
@@ -259,15 +265,10 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
 
         # 6. Current config: component=sim-inference
         cfg_comp = page.locator("#cfg-component").inner_text()
-        assert cfg_comp == "sim-inference", (
-            f"Component should be sim-inference, got: {cfg_comp}"
-        )
+        assert cfg_comp == "sim-inference", f"Component should be sim-inference, got: {cfg_comp}"
 
         # Stop session
         page.locator("#btnX").click()
         page.wait_for_timeout(1500)
-
-        # Verify table reset
-        tbody = page.locator("#rtbody").inner_text()
-        assert "等待启动采数" in tbody, f"Table should reset, got: {tbody[:200]}"
+        assert "等待启动采数" in page.locator("#rtbody").inner_text()
         browser.close()
