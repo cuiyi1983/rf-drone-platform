@@ -171,22 +171,38 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
         # Connect collector
         page.locator("#connBtn").click()
         page.wait_for_timeout(2000)
+        # Check if session is running
+        try:
+            session_status = page.locator("#session-status, .session-status, #connBtn").first.inner_text()
+            print(f"[DEBUG] After connect btn text: {session_status}")
+        except Exception as e:
+            print(f"[DEBUG] Could not read session status: {e}")
 
         # === OBSERVATION PAGE: Start acquisition ===
-        page.evaluate('document.querySelector("#tabs .nav-link[data-pg=\\"obs\\"]").click()')
+        page.evaluate('document.querySelector("#tabs .nav-link[data-pg=\"obs\"]").click()')
         page.wait_for_timeout(500)
         page.locator("#btnS").click()
         page.wait_for_timeout(1500)
+        # Diagnostic: check buffer status and btnS text
+        try:
+            buf_text = page.locator("#buf-frames, #buf-frames").first.inner_text()
+            btn_text = page.locator("#btnS, #btnX").first.inner_text()
+            table_text = page.locator("#rtbody").inner_text()[:100]
+            print(f"[DEBUG] After btnS: buf={buf_text}, btn={btn_text}, table={table_text}")
+        except Exception as e:
+            print(f"[DEBUG] Diagnostic error: {e}")
 
         # Poll table for data rows (up to 12s)
         data_found = False
-        for _ in range(24):
+        for i in range(24):
             page.wait_for_timeout(500)
+            table_text = page.locator("#rtbody").inner_text()[:200]
             rows = page.locator("#rtbody tr").all()
             data_rows = [
                 r for r in rows
                 if "等待" not in r.inner_text() and "no-data" not in (r.get_attribute("class") or "")
             ]
+            print(f"[DEBUG] Poll {i}: rows={len(rows)}, data_rows={len(data_rows)}, table={table_text[:100]}")
             if data_rows:
                 data_found = True
                 break
