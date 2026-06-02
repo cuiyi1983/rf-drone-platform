@@ -37,13 +37,26 @@ def ensure_services():
         subprocess.Popen([sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
             cwd=base, stdout=open("/tmp/platform.log","w"), stderr=subprocess.STDOUT)
         subprocess.Popen([sys.executable, "-m", "http.server", "5102"],
-            cwd=f"{base}/frontend", stdout=open("/tmp/frontend.log","w"), stderr=subprocess.STDOUT)
+            cwd=os.path.join(os.path.dirname(os.path.dirname(base)), "frontend"), stdout=open("/tmp/frontend.log","w"), stderr=subprocess.STDOUT)
         time.sleep(8)
     for url, path, name in [(PLATFORM_URL,"/health","Platform"),(COLLECTOR_URL,"/api/v1/collector/health","Collector")]:
         for _ in range(20):
             if is_ready(url, path): break
             time.sleep(1)
         else: assert False, f"{name} did not become ready"
+    # Check frontend
+    import socket
+    for _ in range(20):
+        try:
+            s = socket.socket()
+            s.settimeout(1)
+            s.connect(("localhost", 5102))
+            s.close()
+            break
+        except:
+            time.sleep(1)
+    else:
+        assert False, "Frontend did not become ready"
     print("\n[conftest] All services ready")
     yield
 
