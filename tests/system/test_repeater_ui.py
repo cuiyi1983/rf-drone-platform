@@ -36,7 +36,7 @@ def ensure_services():
         cwd=base, stdout=open("/tmp/collector.log","w"), stderr=subprocess.STDOUT)
     subprocess.Popen([sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
         cwd=base, stdout=open("/tmp/platform.log","w"), stderr=subprocess.STDOUT)
-    frontend_root = os.path.join(base, "frontend")
+    frontend_root = os.path.join(os.path.dirname(base), "frontend")
     print(f"[conftest] Frontend root: {frontend_root}, exists: {os.path.exists(frontend_root)}")
     p = subprocess.Popen([sys.executable, "-m", "http.server", "5102"],
         cwd=frontend_root, stdout=open("/tmp/frontend.log","w"), stderr=subprocess.STDOUT)
