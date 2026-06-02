@@ -4,6 +4,7 @@ Tests full browser user flow via Playwright headless Chrome.
 """
 import pytest
 import subprocess
+import sys
 import time
 import os
 import re

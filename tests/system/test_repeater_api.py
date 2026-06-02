@@ -4,6 +4,7 @@ Tests full session lifecycle via HTTP API (browser-equivalent calls).
 """
 import pytest
 import subprocess
+import sys
 import time
 import os
 
