@@ -13,6 +13,8 @@ import socket
 import requests
 from playwright.sync_api import sync_playwright
 
+# Use the same Python that runs pytest (venv-aware)
+_python_bin = sys.executable
 
 PLATFORM_URL = "http://localhost:5100"
 FRONTEND_URL = "http://localhost:5102"
@@ -29,16 +31,18 @@ def is_ready(url, path="/health", timeout=3):
 @pytest.fixture(scope="module")
 def ensure_services():
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    print(f"[conftest] Python: {_python_bin}")
     print("\n[conftest] Killing existing services...")
     os.system("fuser -k 5100/tcp 2>/dev/null; fuser -k 5101/tcp 2>/dev/null; fuser -k 5102/tcp 2>/dev/null")
     time.sleep(1)
-    subprocess.Popen([sys.executable, "-m", "collector.api", "--port", "5101"],
-        cwd=base, stdout=open("/tmp/collector.log","w"), stderr=subprocess.STDOUT)
-    subprocess.Popen([sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
+    env = {"COLLECTOR_DEVICE_IMPL": os.environ.get("COLLECTOR_DEVICE_IMPL", "mock")}
+    subprocess.Popen([_python_bin, "-m", "collector.api", "--port", "5101"],
+        cwd=base, env=env, stdout=open("/tmp/collector.log","w"), stderr=subprocess.STDOUT)
+    subprocess.Popen([_python_bin, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
         cwd=base, stdout=open("/tmp/platform.log","w"), stderr=subprocess.STDOUT)
     frontend_root = os.path.join(os.path.dirname(base), "frontend")
     print(f"[conftest] Frontend root: {frontend_root}, exists: {os.path.exists(frontend_root)}")
-    p = subprocess.Popen([sys.executable, "-m", "http.server", "5102"],
+    p = subprocess.Popen([_python_bin, "-m", "http.server", "5102"],
         cwd=frontend_root, stdout=open("/tmp/frontend.log","w"), stderr=subprocess.STDOUT)
     print(f"[conftest] http.server PID={p.pid}")
     time.sleep(8)
@@ -190,11 +194,11 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
             f"No inference rows in 12s. Table: {page.locator('#rtbody').inner_text()[:300]}"
         )
 
-        # 1. 推理次数 > 0
+        # 1. Inference count > 0
         cnt = page.locator("#cnt").inner_text()
-        assert cnt not in ("0", "--"), f"推理次数 should be > 0, got: {cnt}"
+        assert cnt not in ("0", "--"), f"Inference count should be > 0, got: {cnt}"
 
-        # 2. 实时推理统计: 检测结果=NOISE, Drone%%=0.0%%
+        # 2. Detection result=NOISE, Drone%%=0.0%%
         rows = page.locator("#rtbody tr").all()
         data_row = None
         for r in rows:
@@ -207,12 +211,12 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
         is_drone_text = cells[3].strip() if len(cells) > 3 else ""
         drone_pct_text = cells[4].strip() if len(cells) > 4 else ""
         assert is_drone_text == "NOISE", (
-            f"检测结果 should be NOISE (noise file), got: {is_drone_text}"
+            f"Detection result should be NOISE (noise file), got: {is_drone_text}"
         )
         drone_pct_val = float(re.sub(r'[^0-9.]', '', drone_pct_text))
         assert drone_pct_val < 1.0, f"Drone%% should be ~0%% for noise, got: {drone_pct_text}"
 
-        # 3. 推理ms != 空
+        # 3. Process time ms != empty
         page.locator('button.col-toggle[data-col="process_time_ms"]').click()
         page.wait_for_timeout(300)
         headers = page.locator("#rthead th").all_inner_texts()
@@ -222,25 +226,25 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
             pytest.fail(f"推理ms column not found in header: {headers}")
         proc_text = data_row.locator("td").nth(proc_col_idx).inner_text().strip()
         assert proc_text != "" and proc_text != "--", (
-            f"推理ms should not be empty, got: '{proc_text}'"
+            f"Process time should not be empty, got: '{proc_text}'"
         )
-        assert "ms" in proc_text, f"推理ms should contain 'ms', got: {proc_text}"
+        assert "ms" in proc_text, f"Process time should contain 'ms', got: {proc_text}"
 
-        # 4. 缓冲区监控: 总帧数持续增加
+        # 4. Buffer: frame count increases
         frames_el = page.locator("#buf-frames")
         f0 = int(frames_el.inner_text() or "0")
         page.wait_for_timeout(2000)
         f1 = int(frames_el.inner_text() or "0")
-        assert f1 > f0, f"总帧数 should increase: before={f0}, after={f1}"
+        assert f1 > f0, f"Frame count should increase: before={f0}, after={f1}"
 
-        # 5. 缓冲区监控: 采集状态=采集中
+        # 5. Buffer: collection status=采集中
         coll_text = page.locator("#buf-coll").inner_text()
-        assert coll_text == "采集中", f"采集状态 should be 采集中, got: {coll_text}"
+        assert coll_text == "采集中", f"Collection status should be 采集中, got: {coll_text}"
 
-        # 6. 当前配置: 推理组件=sim-inference
+        # 6. Current config: component=sim-inference
         cfg_comp = page.locator("#cfg-component").inner_text()
         assert cfg_comp == "sim-inference", (
-            f"推理组件 should be sim-inference, got: {cfg_comp}"
+            f"Component should be sim-inference, got: {cfg_comp}"
         )
 
         # Stop session
