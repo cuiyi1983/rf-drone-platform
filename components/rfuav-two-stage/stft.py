@@ -1,87 +1,68 @@
 """
 STFT utilities for RFUAV inference.
 Converts IQ data to spectrogram for YOLO detection.
+MATCHES training code (stage1_generate_spectrograms.py) exactly.
 """
 
 import numpy as np
-from scipy.signal import windows
+from scipy.signal import stft
+from scipy.signal.windows import hamming
 from scipy.ndimage import zoom as scipy_zoom
 
 
-# STFT parameters (from RF-Training config)
+# STFT parameters (MATCH training config)
 SAMPLE_RATE = 60_000_000      # 60 MHz
-NPERSEG = 1024                # FFT window size
-HOP = 512                     # Hop size
-WINDOW_NAME = "hamming"       # Window function
-# Input: 600000 points → ~1169 frames STFT
-# STFT output shape: (n_frames, n_freq_bins) = (~1169, 513)
+NPERSEG = 1024                # FFT window size (=NFFT in training)
+NOVLAP = 512                  # Hop size (=HOP in training)
+WINDOW = hamming(NPERSEG)     # Hamming window (MATCH training)
+TARGET_HEIGHT = 640
+TARGET_WIDTH = 640
 
 
-def get_window():
-    """Get the STFT window function."""
-    if WINDOW_NAME == "hamming":
-        return windows.hamming(NPERSEG)
-    elif WINDOW_NAME == "hann":
-        return windows.hann(NPERSEG)
-    elif WINDOW_NAME == "blackman":
-        return windows.blackman(NPERSEG)
-    else:
-        return windows.hamming(NPERSEG)
-
-
-def iq_to_spectrogram(iq_data: np.ndarray, target_height: int = 640, target_width: int = 640) -> np.ndarray:
+def iq_to_spectrogram(iq_data: np.ndarray, target_height: int = TARGET_HEIGHT, target_width: int = TARGET_WIDTH) -> np.ndarray:
     """
     Convert IQ data to spectrogram image (normalized to 0-255 for YOLO).
-
-    Args:
-        iq_data: Complex IQ array, shape (N,) where N >= 600000
-        target_height: Target image height (default 640 for YOLO)
-        target_width: Target image width (default 640 for YOLO)
-
-    Returns:
-        spectrogram: 2D numpy array (target_height, target_width), dtype uint8
-                     Values 0-255 representing spectrogram power in dB
+    MATCHES stage1_generate_spectrograms.py exactly:
+      - scipy.signal.stft with same params
+      - np.fft.fftshift on frequency axis
+      - 10 * log10(|Z|) amplitude dB
+      - min-max normalization
     """
     iq_data = np.asarray(iq_data, dtype=np.complex64)
 
-    # Use first 600000 points if more available
+    # Use first 600000 points if more available (MATCH training)
     if len(iq_data) >= 600000:
         iq_data = iq_data[:600000]
     else:
         raise ValueError(f"IQ data too short: {len(iq_data)} < 600000 (min required)")
 
-    # Compute STFT
-    window = get_window()
-    n_frames = (len(iq_data) - NPERSEG) // HOP + 1
+    # Compute STFT with same params as training code
+    f, t, Zxx = stft(
+        iq_data,
+        fs=SAMPLE_RATE,
+        window=WINDOW,
+        nperseg=NPERSEG,
+        noverlap=NOVLAP,
+        nfft=NPERSEG,
+        boundary=None,
+        padded=False
+    )
 
-    # Compute STFT manually to get (n_freq_bins, n_frames)
-    # Use full FFT since IQ data is complex; we'll take magnitude later
-    stft_matrix = np.zeros((NPERSEG, n_frames), dtype=np.complex64)
+    # fftshift on frequency axis (MATCH training: np.fft.fftshift(Zxx, axes=0))
+    Zxx = np.fft.fftshift(Zxx, axes=0)
 
-    for i in range(n_frames):
-        start = i * HOP
-        segment = iq_data[start:start + NPERSEG]
-        if len(segment) < NPERSEG:
-            break
-        # Ensure segment is complex64
-        segment = segment.astype(np.complex64)
-        window_f = window.astype(np.float32)
-        stft_matrix[:, i] = np.fft.fft(segment * window_f)
+    # Amplitude dB: 10 * log10(|Z|) (MATCH training code exactly)
+    mag_dB = 10 * np.log10(np.abs(Zxx) + 1e-10)
 
-    # Take magnitude (only first half for positive frequencies)
-    stft_matrix = np.abs(stft_matrix[:NPERSEG // 2 + 1, :])
+    # Min-max normalization (MATCH training: (dB - min) / (max - min))
+    v_min = mag_dB.min()
+    v_max = mag_dB.max()
+    if v_max > v_min:
+        spec = (mag_dB - v_min) / (v_max - v_min)
+    else:
+        spec = np.zeros_like(mag_dB)
 
-    # Compute power spectrogram (magnitude squared)
-    power = stft_matrix ** 2
-
-    # Convert to dB scale: 10*log10(|Z|^2) = 20*log10(|Z|) - confirmed CORRECT by AB test
-    power_db = 10 * np.log10(power + 1e-10)
-
-    # Normalize to 0-255 (percentile-based per-frame, original behavior)
-    p_min = np.percentile(power_db, 1)
-    p_max = np.percentile(power_db, 99)
-    power_db_norm = np.clip((power_db - p_min) / (p_max - p_min + 1e-10), 0, 1)
-    spectrogram = (power_db_norm * 255).astype(np.uint8)
+    spectrogram = (spec * 255).astype(np.uint8)
 
     # Resize to target size using bilinear interpolation
     h_scale = target_height / spectrogram.shape[0]
@@ -97,10 +78,9 @@ def iq_to_spectrogram(iq_data: np.ndarray, target_height: int = 640, target_widt
 def stft_shape_from_data_length(n_samples: int = 600000) -> tuple:
     """
     Calculate STFT output shape given input sample count.
-
     Returns:
-        (n_frames, n_freq_bins)
+        (n_freq_bins, n_frames) after fftshift
     """
-    n_frames = (n_samples - NPERSEG) // HOP + 1
-    n_freq_bins = NPERSEG // 2 + 1
-    return (n_frames, n_freq_bins)
+    n_frames = (n_samples - NPERSEG) // NOVLAP + 1
+    n_freq_bins = NPERSEG  # Full FFT size (fftshift brings DC to center)
+    return (n_freq_bins, n_frames)
