@@ -21,7 +21,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pytest requests scipy numpy pillow
+          pip install -e ".[dev]"
+          pip install requests scipy
 
       - name: Run system tests
         run: |
