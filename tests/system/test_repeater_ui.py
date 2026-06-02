@@ -31,11 +31,11 @@ def ensure_services():
         print("\n[conftest] Starting services...")
         os.system("fuser -k 5100/tcp 2>/dev/null; fuser -k 5101/tcp 2>/dev/null; fuser -k 5102/tcp 2>/dev/null")
         time.sleep(1)
-        subprocess.Popen(["sys.executable", "-m", "collector.api", "--port", "5101"],
+        subprocess.Popen([sys.executable, "-m", "collector.api", "--port", "5101"],
             cwd=base, stdout=open("/tmp/collector.log","w"), stderr=subprocess.STDOUT)
-        subprocess.Popen(["sys.executable", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
+        subprocess.Popen([sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
             cwd=base, stdout=open("/tmp/platform.log","w"), stderr=subprocess.STDOUT)
-        subprocess.Popen(["sys.executable", "-m", "http.server", "5102"],
+        subprocess.Popen([sys.executable, "-m", "http.server", "5102"],
             cwd=f"{base}/frontend", stdout=open("/tmp/frontend.log","w"), stderr=subprocess.STDOUT)
         time.sleep(8)
     for url, path, name in [(PLATFORM_URL,"/health","Platform"),(COLLECTOR_URL,"/api/v1/collector/health","Collector")]:
