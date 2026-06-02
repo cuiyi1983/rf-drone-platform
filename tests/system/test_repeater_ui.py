@@ -6,6 +6,7 @@ import pytest
 import subprocess
 import time
 import os
+import re
 
 import requests
 from playwright.sync_api import sync_playwright
@@ -88,14 +89,21 @@ def test_navbar_tabs(ensure_services):
         browser.close()
 
 
-def test_pluto_repeater_session_start_stop(ensure_services, stop_active_sessions):
-    """TC-SYS-02.3: Start repeater session via UI, verify table, stop, verify reset."""
+def test_repeater_session_stats(ensure_services, stop_active_sessions):
+    """
+    TC-SYS-02.3: Start repeater session via UI with sim-inference + noise file,
+    then verify ALL stats in the observation page:
+
+      - 实时推理统计表: 检测结果=NOISE, Drone%=0.0%, 推理ms!=空
+      - 缓冲区监控: 总帧数持续增加, 采集状态=采集中
+      - 当前配置: 推理组件=sim-inference
+    """
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         page.goto(FRONTEND_URL, wait_until="domcontentloaded", timeout=15000)
 
-        # === CONFIG PAGE: Select pluto-repeater, load component, connect ===
+        # === CONFIG PAGE: Select pluto-repeater, load sim-inference, connect ===
         page.evaluate("document.querySelector('#tabs .nav-link[data-pg=\"cfg\"]').click()")
         page.wait_for_timeout(1000)
 
@@ -104,18 +112,20 @@ def test_pluto_repeater_session_start_stop(ensure_services, stop_active_sessions
             opts = page.locator("#deviceSel option").all_inner_texts()
             if any("pluto-repeater" in o for o in opts): break
             page.wait_for_timeout(1000)
-        else: pytest.fail(f"pluto-repeater not in device list: {opts}")
+        else:
+            pytest.fail(f"pluto-repeater not in device list: {opts}")
 
         # Select pluto-repeater
         opt_vals = page.evaluate(
-            "Array.from(document.querySelectorAll('#deviceSel option')).map(o=>({v:o.value,t:o.textContent}))"
+            "Array.from(document.querySelectorAll('#deviceSel option'))"
+            ".map(o=>({v:o.value,t:o.textContent}))" 
         )
         rpt = next((o for o in opt_vals if "pluto-repeater" in o["v"].lower()), None)
         assert rpt, f"pluto-repeater not found in options: {opt_vals}"
         page.locator("#deviceSel").select_option(rpt["v"])
         page.wait_for_timeout(800)
 
-        # IQ path auto-filled
+        # IQ path auto-filled (noise file by default)
         iq = page.locator("#iqFilePath").input_value()
         assert iq and "IQ-Record" in iq, f"IQ path not auto-filled: {iq}"
 
@@ -124,10 +134,12 @@ def test_pluto_repeater_session_start_stop(ensure_services, stop_active_sessions
             comp_opts = page.locator("#msel option").all_inner_texts()
             if any("sim-inference" in o for o in comp_opts): break
             page.wait_for_timeout(500)
-        else: pytest.fail(f"sim-inference not in component list: {comp_opts}")
+        else:
+            pytest.fail(f"sim-inference not in component list: {comp_opts}")
 
         comp_vals = page.evaluate(
-            "Array.from(document.querySelectorAll('#msel option')).map(o=>({v:o.value,t:o.textContent}))"
+            "Array.from(document.querySelectorAll('#msel option'))"
+            ".map(o=>({v:o.value,t:o.textContent}))" 
         )
         sim = next((o for o in comp_vals if "sim-inference" in o["v"].lower()), None)
         assert sim, f"sim-inference not found: {comp_vals}"
@@ -143,32 +155,91 @@ def test_pluto_repeater_session_start_stop(ensure_services, stop_active_sessions
         # === OBSERVATION PAGE: Start acquisition ===
         page.evaluate("document.querySelector('#tabs .nav-link[data-pg=\"obs\"]').click()")
         page.wait_for_timeout(500)
-
         page.locator("#btnS").click()
         page.wait_for_timeout(1500)
 
-        # === Poll table for data rows (up to 10s) ===
+        # Poll table for data rows (up to 12s)
         data_found = False
-        for _ in range(20):
+        for _ in range(24):
             page.wait_for_timeout(500)
             rows = page.locator("#rtbody tr").all()
-            data_rows = [r for r in rows if "等待" not in r.inner_text() and "no-data" not in (r.get_attribute("class") or "")]
+            data_rows = [
+                r for r in rows
+                if "等待" not in r.inner_text() and "no-data" not in (r.get_attribute("class") or "")
+            ]
             if data_rows:
                 data_found = True
                 break
-        assert data_found, f"No inference rows in 10s. Table: {page.locator('#rtbody').inner_text()[:300]}"
+        assert data_found, (
+            f"No inference rows in 12s. Table: {page.locator('#rtbody').inner_text()[:300]}"
+        )
 
-        # Verify count > 0
+        # ── 1. 推理次数 > 0 ──────────────────────────────────────
         cnt = page.locator("#cnt").inner_text()
-        assert cnt not in ("0", "--"), f"Inference count should be > 0, got: {cnt}"
+        assert cnt not in ("0", "--"), f"推理次数 should be > 0, got: {cnt}"
 
-        # === Stop session (btnX is on OBSERVATION page) ===
+        # ── 2. 实时推理统计: 检测结果=NOISE, Drone%=0.0% ────────
+        first_row_cells = page.locator("#rtbody tr:not(.no-data) td").all_inner_texts()
+        # Columns: 时间, 频率(MHz), 功率(dB), 检测结果, Drone%
+        # Find the row with actual data
+        rows = page.locator("#rtbody tr").all()
+        data_row = None
+        for r in rows:
+            txt = r.inner_text()
+            if "等待" not in txt and "no-data" not in (r.get_attribute("class") or ""):
+                data_row = r
+                break
+        assert data_row, "No data row found"
+        cells = data_row.locator("td").all_inner_texts()
+        # is_drone column: text is 'NOISE' or 'DRONE'
+        is_drone_text = cells[3].strip() if len(cells) > 3 else ""
+        drone_pct_text = cells[4].strip() if len(cells) > 4 else ""
+        assert is_drone_text == "NOISE", (
+            f"检测结果 should be NOISE (noise file), got: {is_drone_text}"
+        )
+        # Drone% should be 0.0% or close to 0
+        drone_pct_val = float(re.sub(r'[^0-9.]', '', drone_pct_text))
+        assert drone_pct_val < 1.0, f"Drone% should be ~0% for noise, got: {drone_pct_text}"
+
+        # ── 3. 推理ms != 空 (process_time_ms column is hidden, toggle it) ──
+        # Click the 推理ms toggle to show it
+        page.locator("button.col-toggle[data-col=\"process_time_ms\"]").click()
+        page.wait_for_timeout(300)
+        # Now find process_time_ms column index in header
+        headers = page.locator("#rthead th").all_inner_texts()
+        try:
+            proc_col_idx = headers.index("推理ms")
+        except ValueError:
+            pytest.fail(f"推理ms column not found in header: {headers}")
+        proc_text = data_row.locator("td").nth(proc_col_idx).inner_text().strip()
+        assert proc_text != "" and proc_text != "--", (
+            f"推理ms should not be empty, got: '{proc_text}'"
+        )
+        # Should contain 'ms'
+        assert "ms" in proc_text, f"推理ms should contain 'ms', got: {proc_text}"
+
+        # ── 4. 缓冲区监控: 总帧数持续增加 ─────────────────────
+        frames_el = page.locator("#buf-frames")
+        f0 = int(frames_el.inner_text() or "0")
+        page.wait_for_timeout(2000)
+        f1 = int(frames_el.inner_text() or "0")
+        assert f1 > f0, f"总帧数 should increase: before={f0}, after={f1}"
+
+        # ── 5. 缓冲区监控: 采集状态=采集中 ────────────────────
+        coll_text = page.locator("#buf-coll").inner_text()
+        assert coll_text == "采集中", f"采集状态 should be 采集中, got: {coll_text}"
+
+        # ── 6. 当前配置: 推理组件=sim-inference ────────────────
+        cfg_comp = page.locator("#cfg-component").inner_text()
+        assert cfg_comp == "sim-inference", (
+            f"推理组件 should be sim-inference, got: {cfg_comp}"
+        )
+
+        # ── Stop session ──────────────────────────────────────
         page.locator("#btnX").click()
         page.wait_for_timeout(1500)
 
-        # === Verify table reset ===
-        tbody = page.locator("#rtbody").inner_text()
-        page.wait_for_timeout(500)
+        # Verify table reset
         tbody = page.locator("#rtbody").inner_text()
         assert "等待启动采数" in tbody, f"Table should reset, got: {tbody[:200]}"
         browser.close()
