@@ -10,6 +10,8 @@ jobs:
   system-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      COLLECTOR_DEVICE_IMPL: mock
 
     steps:
       - uses: actions/checkout@v4
@@ -24,12 +26,20 @@ jobs:
           pip install uv
           uv venv .venv --python 3.10
           source .venv/bin/activate
-          uv pip install playwright
-          playwright install chromium --with-deps
           uv pip install -e ".[dev]"
-          uv pip install requests scipy
+          uv pip install requests scipy playwright
 
-      - name: Run system tests
+      - name: Install Playwright Chromium
         run: |
           source .venv/bin/activate
-          pytest tests/system/test_repeater_ui.py -v --tb=long
+          playwright install chromium --with-deps
+
+      - name: Run system tests (API)
+        run: |
+          source .venv/bin/activate
+          pytest tests/system/test_repeater_api.py -v --tb=short
+
+      - name: Run UI smoke tests
+        run: |
+          source .venv/bin/activate
+          pytest tests/system/test_repeater_ui.py -v --tb=short
