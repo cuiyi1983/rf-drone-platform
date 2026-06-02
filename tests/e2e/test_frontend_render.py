@@ -16,7 +16,7 @@ import os
 import sys
 
 PLATFORM_URL = "http://localhost:5100"
-FRONTEND_DIR = "/home/ubuntu/rf-drone-platform-test/frontend"
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "frontend")
 
 
 def find_free_port():

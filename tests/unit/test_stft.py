@@ -8,7 +8,7 @@ import pytest
 import importlib.util
 
 # Load stft module directly from file path (handles hyphenated directory name)
-stft_path = '/home/ubuntu/rf-drone-platform-test/components/rfuav-two-stage/stft.py'
+stft_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'components/rfuav-two-stage/stft.py')
 spec = importlib.util.spec_from_file_location('stft', stft_path)
 stft = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(stft)

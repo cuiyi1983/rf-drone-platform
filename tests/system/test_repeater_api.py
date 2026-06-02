@@ -23,7 +23,7 @@ def is_ready(url, path="/health", timeout=3):
 
 @pytest.fixture(scope="module")
 def ensure_services():
-    base = "/home/ubuntu/rf-drone-platform-test"
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if not is_ready(COLLECTOR_URL, "/api/v1/collector/health") or not is_ready(PLATFORM_URL):
         print("\n[conftest] Starting services...")
         os.system("fuser -k 5100/tcp 2>/dev/null; fuser -k 5101/tcp 2>/dev/null")
