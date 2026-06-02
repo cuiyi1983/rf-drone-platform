@@ -31,10 +31,10 @@ def ensure_services():
         env = os.environ.copy()
         env["COLLECTOR_DEVICE_IMPL"] = "mock"
         subprocess.Popen(
-            ["/usr/bin/python3", "-m", "collector.api", "--port", "5101"],
+            ["sys.executable", "-m", "collector.api", "--port", "5101"],
             cwd=base, stdout=open("/tmp/collector.log","w"), stderr=subprocess.STDOUT, env=env)
         subprocess.Popen(
-            ["/usr/bin/python3", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
+            ["sys.executable", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
             cwd=base, stdout=open("/tmp/platform.log","w"), stderr=subprocess.STDOUT)
         time.sleep(8)
 
