@@ -32,14 +32,14 @@ def ensure_services():
 
     # Check if already running
     collector_ready = is_service_ready(COLLECTOR_URL, "/api/v1/collector/health")
-    platform_ready = is_service_ready(PLATFORM_URL)
+    platform_ready = is_service_ready(PLATFORM_URL, "/health")
 
     base_dir = "/home/ubuntu/rf-drone-platform-test"
 
     if not collector_ready:
         print("\n[conftest] Starting Collector (5101)...")
         col_proc = subprocess.Popen(
-            [sys.executable, "-m", "collector.api", "--mock-devices", "--port", "5101"],
+            [sys.executable, "-m", "collector.api", "--port", "5101"],
             cwd=base_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -66,7 +66,7 @@ def ensure_services():
         # Wait for platform
         for _ in range(15):
             time.sleep(1)
-            if is_service_ready(PLATFORM_URL):
+            if is_service_ready(PLATFORM_URL, "/health"):
                 print("[conftest] Platform ready")
                 break
 
