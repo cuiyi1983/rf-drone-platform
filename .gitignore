@@ -27,3 +27,7 @@ node_modules/
 dist/
 build/
 *.egg-info/
+
+# Runtime
+*.pid
+.pytest_cache/
