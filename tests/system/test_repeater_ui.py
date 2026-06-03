@@ -270,3 +270,125 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
         page.wait_for_timeout(1500)
         assert "等待启动采数" in page.locator("#rtbody").inner_text()
         browser.close()
+
+def test_component_device_dropdown_renders(ensure_services):
+    """
+    TC-SYS-03: sim-inference component schema renders device dropdown with NPU option.
+    Verifies the frontend correctly displays the '推理设备' select from config_schema.
+    """
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(FRONTEND_URL, wait_until="domcontentloaded", timeout=15000)
+
+        # Navigate to config page
+        _click_tab(page, "cfg")
+        page.wait_for_timeout(1000)
+
+        # Load sim-inference component
+        for _ in range(10):
+            comp_opts = page.locator("#msel option").all_inner_texts()
+            if comp_opts and any("sim-inference" in o for o in comp_opts):
+                break
+            page.wait_for_timeout(500)
+        else:
+            pytest.fail(f"sim-inference not in list: {comp_opts}")
+
+        comp_vals = page.evaluate(
+            "Array.from(document.querySelectorAll('#msel option'))"
+            ".map(o=>({v:o.value,t:o.textContent}))"
+        )
+        sim = next((o for o in comp_vals if "sim-inference" in o["v"].lower()), None)
+        assert sim, f"sim-inference not found in: {comp_vals}"
+        page.locator("#msel").select_option(sim["v"])
+        page.wait_for_timeout(300)
+
+        # Click Load Component
+        page.locator("#mlbtn").click()
+        page.wait_for_timeout(1500)
+
+        # --- TC-SYS-03.1: schema-params container is visible ---
+        schema_container = page.locator("#schema-params")
+        assert schema_container.count() > 0, "#schema-params element not found"
+        assert schema_container.is_visible(), "#schema-params should be visible after loading component"
+
+        # --- TC-SYS-03.2: device select element exists with id=sp_device ---
+        device_sel = page.locator("#sp_device")
+        assert device_sel.count() > 0, "#sp_device select not found in schema-params"
+        assert device_sel.is_visible(), "#sp_device select should be visible"
+
+        # --- TC-SYS-03.3: NPU is one of the options ---
+        options = page.evaluate(
+            "Array.from(document.querySelectorAll('#sp_device option')).map(o=>({v:o.value,t:o.textContent}))"
+        )
+        values = [o['v'] for o in options]
+        assert 'npu' in values, f"NPU not in device options: {options}"
+        assert 'auto' in values, f"auto not in device options: {options}"
+        assert 'cpu' in values, f"cpu not in device options: {options}"
+
+        # --- TC-SYS-03.4: Selecting NPU updates the select value ---
+        page.locator("#sp_device").select_option('npu')
+        page.wait_for_timeout(200)
+        selected = page.locator("#sp_device").input_value()
+        assert selected == 'npu', f"Device select should be 'npu' after selection, got: {selected}"
+
+        browser.close()
+
+
+def test_rfuav_component_schema_renders_device(ensure_services):
+    """
+    TC-SYS-04: rfuav-two-stage component schema renders device dropdown with NPU option.
+    """
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(FRONTEND_URL, wait_until="domcontentloaded", timeout=15000)
+
+        # Navigate to config page
+        _click_tab(page, "cfg")
+        page.wait_for_timeout(1000)
+
+        # Load rfuav-two-stage component
+        for _ in range(10):
+            comp_opts = page.locator("#msel option").all_inner_texts()
+            if comp_opts and any("rfuav" in o.lower() for o in comp_opts):
+                break
+            page.wait_for_timeout(500)
+        else:
+            pytest.fail(f"rfuav not in component list: {comp_opts}")
+
+        comp_vals = page.evaluate(
+            "Array.from(document.querySelectorAll('#msel option'))"
+            ".map(o=>({v:o.value,t:o.textContent}))"
+        )
+        rfuav = next((o for o in comp_vals if "rfuav" in o["v"].lower()), None)
+        assert rfuav, f"rfuav-two-stage not found in: {comp_vals}"
+        page.locator("#msel").select_option(rfuav["v"])
+        page.wait_for_timeout(300)
+
+        # Click Load Component
+        page.locator("#mlbtn").click()
+        page.wait_for_timeout(1500)
+
+        # --- TC-SYS-04.1: schema-params visible ---
+        assert page.locator("#schema-params").is_visible(), "#schema-params should be visible for rfuav"
+
+        # --- TC-SYS-04.2: device dropdown exists ---
+        device_sel = page.locator("#sp_device")
+        assert device_sel.count() > 0, "#sp_device not found for rfuav component"
+        assert device_sel.is_visible(), "#sp_device should be visible"
+
+        # --- TC-SYS-04.3: NPU option present ---
+        options = page.evaluate(
+            "Array.from(document.querySelectorAll('#sp_device option')).map(o=>({v:o.value,t:o.textContent}))"
+        )
+        values = [o['v'] for o in options]
+        assert 'npu' in values, f"NPU not in rfuav device options: {options}"
+        assert 'auto' in values, f"auto not in rfuav device options: {options}"
+
+        # --- TC-SYS-04.4: device can be set to NPU and persists ---
+        page.locator("#sp_device").select_option('npu')
+        page.wait_for_timeout(200)
+        assert page.locator("#sp_device").input_value() == 'npu'
+
+        browser.close()
