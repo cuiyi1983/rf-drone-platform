@@ -120,6 +120,16 @@ def _get_conn_btn_text(page):
     except:
         return "(not found)"
 
+import pytest
+import os
+
+# Skip UI tests on CI when frontend directory is not available (not in git)
+FRONTEND_AVAILABLE = os.path.isdir(os.path.join(os.path.dirname(__file__), '..', '..', 'frontend'))
+
+def skip_if_no_frontend():
+    if not FRONTEND_AVAILABLE:
+        pytest.skip("frontend/ not available in CI (not tracked in git)", allow_module_level=True)
+
 def test_page_loads(ensure_services):
     """TC-SYS-02.1: Web UI loads successfully."""
     with sync_playwright() as p:
@@ -439,9 +449,11 @@ def test_session_stats_returns_actual_provider(ensure_services):
         page = browser.new_page()
 
         try:
-            page.goto("http://localhost:5173", timeout=10000)
+                skip_if_no_frontend()
+        skip_if_no_frontend()
+    page.goto("http://localhost:5100/static", timeout=10000)
         except Exception:
-            page.goto("http://localhost:5174", timeout=10000)
+            page.goto("http://localhost:5100/static", timeout=10000)
 
         page.wait_for_timeout(2000)
         page.evaluate("window._statsEvents = []")
