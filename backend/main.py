@@ -265,7 +265,7 @@ class Platform:
         if not comp_cls:
             return {"error": f"组件 {component_id} 未找到或不支持实例化", "code": 1003}
         component_instance = comp_cls()
-        device = "cpu"  # 实际通过 ONNX Runtime 检测
+        device = config.get("device", "cpu")
 
         if not framework.load_component(component_id, component_instance, config, device):
             return {"error": "组件初始化失败", "code": 1002}

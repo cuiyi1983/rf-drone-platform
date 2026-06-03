@@ -203,7 +203,10 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             },
             "config_schema": {
                 "confidence_threshold": {"type": "number", "default": 0.5},
-                "max_detections": {"type": "integer", "default": 10}
+                "max_detections": {"type": "integer", "default": 10},
+                "device": {"type": "string", "default": "auto",
+                           "options": ["auto", "cpu", "npu", "cuda"],
+                           "description": "推理设备: auto=自动检测, cpu=CPU, npu=NPU, cuda=CUDA"}
             },
             "class_labels": CLASS_LABELS
         }
@@ -230,25 +233,47 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             # Default: models subdirectory of this component
             self._models_dir = os.path.join(os.path.dirname(__file__), 'models')
 
-        # Determine ONNX Runtime providers (NPU > DML > CUDA > CPU)
+        # Determine ONNX Runtime providers based on device config or auto-detect
+        requested = config.get("device", "auto")
         available = ort.get_available_providers()
-        providers = ['CPUExecutionProvider']
-        device_name = 'CPU'
-        for p in available:
-            pl = p.lower()
-            if pl.startswith('acl'):
-                providers = [p, 'CPUExecutionProvider']
-                device_name = 'NPU (ACL)'
-                break
-            elif pl.startswith('dml'):
-                providers = [p, 'CPUExecutionProvider']
-                device_name = 'NPU (DirectML)'
-                break
-            elif pl.startswith('cuda'):
-                providers = [p, 'CPUExecutionProvider']
-                device_name = 'CUDA GPU'
-                break
-        logger.info(f'RFUAV inference component loading, using: {device_name}')
+        providers = ["CPUExecutionProvider"]
+        device_name = "CPU"
+
+        if requested != "auto":
+            if requested == "npu":
+                for p in available:
+                    pl = p.lower()
+                    if pl.startswith("acl") or pl.startswith("dml"):
+                        providers = [p, "CPUExecutionProvider"]
+                        device_name = "NPU (ACL)" if pl.startswith("acl") else "NPU (DirectML)"
+                        break
+                if providers == ["CPUExecutionProvider"]:
+                    logger.warning("NPU requested but not available, falling back to CPU")
+            elif requested == "cuda":
+                for p in available:
+                    if p.lower().startswith("cuda"):
+                        providers = [p, "CPUExecutionProvider"]
+                        device_name = "CUDA GPU"
+                        break
+                if providers == ["CPUExecutionProvider"]:
+                    logger.warning("CUDA requested but not available, falling back to CPU")
+        else:
+            for p in available:
+                pl = p.lower()
+                if pl.startswith("acl"):
+                    providers = [p, "CPUExecutionProvider"]
+                    device_name = "NPU (ACL)"
+                    break
+                elif pl.startswith("dml"):
+                    providers = [p, "CPUExecutionProvider"]
+                    device_name = "NPU (DirectML)"
+                    break
+                elif pl.startswith("cuda"):
+                    providers = [p, "CPUExecutionProvider"]
+                    device_name = "CUDA GPU"
+                    break
+
+        logger.info(f"RFUAV inference component loading, device={requested}, using: {device_name}")
 
         # Load Stage1 YOLO model
         stage1_path = os.path.join(self._models_dir, 'stage1.onnx')

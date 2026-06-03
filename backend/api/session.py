@@ -33,6 +33,9 @@ async def start_session(request: dict) -> dict:
     for _field in ["collector_type", "iq_file_path", "loop_play"]:
         if _field in request and request[_field] is not None:
             config[_field] = request[_field]
+    # Pass device from request top-level to config if specified
+    if "device" in request and request["device"] is not None:
+        config["device"] = request["device"]
 
 
     if not component_id:
