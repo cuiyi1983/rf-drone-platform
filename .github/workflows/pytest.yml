@@ -39,9 +39,13 @@ jobs:
           source .venv/bin/activate
           pytest tests/system/test_repeater_api.py tests/system/test_sim_inference_stats.py -v --tb=short --capture=no
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Start frontend dev server
         run: |
-          source .venv/bin/activate
           cd frontend && npm run dev &
           sleep 8
 
