@@ -34,7 +34,7 @@ def ensure_services():
     platform_ready = is_service_ready(PLATFORM_URL, "/health")
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    venv_python = os.path.join(base_dir, ".venv", "bin", "python3")
+    venv_python = sys.executable  # use the Python running pytest
 
     if not collector_ready:
         print("\n[conftest] Starting Collector (5101)...")
@@ -46,7 +46,7 @@ def ensure_services():
         )
         pids["collector"] = col_proc
         started["collector"] = True
-        for _ in range(30):
+        for _ in range(60):
             time.sleep(1)
             if is_service_ready(COLLECTOR_URL, "/api/v1/collector/health"):
                 print("[conftest] Collector ready")
@@ -62,7 +62,7 @@ def ensure_services():
         )
         pids["platform"] = plt_proc
         started["platform"] = True
-        for _ in range(30):
+        for _ in range(60):
             time.sleep(1)
             if is_service_ready(PLATFORM_URL, "/health"):
                 print("[conftest] Platform ready")
