@@ -445,16 +445,6 @@ async function startSession() {
         const bs = $('buffer_size');
         if (bs?.value) params.buffer_size = parseInt(bs.value);
     }
-    const params = collectSchemaParams();
-    // Collect buffer_size (different field for repeater vs real device)
-    const isRepeater = $('deviceSel')?.value?.includes('pluto-repeater');
-    if (isRepeater) {
-        const bs = $('buffer_size_repeater');
-        if (bs?.value) params.buffer_size = parseInt(bs.value);
-    } else {
-        const bs = $('buffer_size');
-        if (bs?.value) params.buffer_size = parseInt(bs.value);
-    }
     // Extract device from schema params for top-level API field
     const deviceValue = params.device;
     if (deviceValue) delete params.device;  // remove from config, send top-level
