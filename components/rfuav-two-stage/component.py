@@ -231,25 +231,22 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             self._models_dir = os.path.join(os.path.dirname(__file__), 'models')
 
         # Determine ONNX Runtime providers (NPU > DML > CUDA > CPU)
-        available = ort.get_available_providers()
-        priority = ['ACLExecutionProvider', 'DMLExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
-        for p in priority:
-            if p in available:
-                providers = [p, 'CPUExecutionProvider']
+        # Use case-insensitive matching to handle variant provider name capitalizations
+        available_lower = [p.lower() for p in ort.get_available_providers()]
+        priority = [
+            ('acl', 'ACLExecutionProvider', 'NPU (ACL)'),
+            ('dml', 'DMLExecutionProvider', 'NPU (DirectML)'),
+            ('cuda', 'CUDAExecutionProvider', 'CUDA GPU'),
+        ]
+        providers = ['CPUExecutionProvider']
+        device_name = 'CPU'
+        for key_lower, key_orig, name in priority:
+            if key_lower in available_lower:
+                # Find the actual provider name with correct capitalization
+                actual = ort.get_available_providers()[available_lower.index(key_lower)]
+                providers = [actual, 'CPUExecutionProvider']
+                device_name = name
                 break
-        else:
-            providers = ['CPUExecutionProvider']
-
-        # Log which device is used
-        used = providers[0]
-        if used == 'ACLExecutionProvider':
-            device_name = 'NPU (ACL)'
-        elif used == 'DMLExecutionProvider':
-            device_name = 'NPU (DirectML)'
-        elif used == 'CUDAExecutionProvider':
-            device_name = 'CUDA GPU'
-        else:
-            device_name = 'CPU'
         logger.info(f'RFUAV inference component loading, using: {device_name}')
 
         # Load Stage1 YOLO model
