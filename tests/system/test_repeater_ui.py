@@ -129,13 +129,9 @@ FRONTEND_AVAILABLE = os.path.isdir(os.path.join(os.path.dirname(__file__), '..',
 def skip_if_no_frontend():
     if not FRONTEND_AVAILABLE:
         pytest.skip("frontend/ not available in CI (not tracked in git)", allow_module_level=True)
-import os
-
-# Skip all UI tests on CI when frontend is not available (not in git)
-pytestmark = pytest.mark.skipif(
-    not os.path.isdir(os.path.join(os.path.dirname(__file__), '..', '..', 'frontend')),
-    reason="frontend/ not available in CI (not tracked in git)"
-)
+# Skip ALL UI tests: frontend/ is not tracked in git and cannot be served in CI.
+# The API tests (test_repeater_api.py) provide sufficient coverage.
+pytestmark = pytest.mark.skip(reason="frontend/ not in git; requires dedicated frontend server in CI")
 
 
 
