@@ -27,7 +27,7 @@ jobs:
           uv venv .venv --python 3.10
           source .venv/bin/activate
           uv pip install -e ".[dev]"
-          uv pip install requests scipy playwright
+          uv pip install requests scipy playwright onnxruntime
 
       - name: Install Playwright Chromium
         run: |
