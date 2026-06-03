@@ -39,7 +39,7 @@ jobs:
       - name: Run system tests (API)
         run: |
           source .venv/bin/activate
-          pytest tests/system/test_repeater_api.py -v --tb=short --capture=no
+          pytest tests/system/test_repeater_api.py tests/system/test_sim_inference_stats.py -v --tb=short --capture=no
 
       - name: Run UI smoke tests
         run: |
