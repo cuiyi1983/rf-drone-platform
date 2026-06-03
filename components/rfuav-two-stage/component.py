@@ -230,6 +230,7 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             self._models_dir = os.path.join(os.path.dirname(__file__), 'models')
 
         # Determine ONNX Runtime providers
+        device = config.get("device", "auto")
         if device == 'cuda':
             providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
         else:
