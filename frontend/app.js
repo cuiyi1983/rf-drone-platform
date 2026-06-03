@@ -61,13 +61,17 @@ function startPolling() {
   _pollT = setInterval(async () => {
     if (!S.session_id || !S.collecting) return;
     try {
-      const data = await api('GET', '/api/v1/session/' + S.session_id + '/latest_result');
-      if (data.result) {
+      const [resultData, statsData] = await Promise.all([
+        api('GET', '/api/v1/session/' + S.session_id + '/latest_result'),
+        api('GET', '/api/v1/session/' + S.session_id + '/inference_stats'),
+      ]);
+      if (resultData.result) {
         handleInferenceResult({
           session_id: S.session_id,
-          ...data.result,
+          ...resultData.result,
         });
       }
+      handleInferenceStats(statsData);
     } catch (e) { /* silently ignore */ }
   }, 500);
 
@@ -264,6 +268,10 @@ function updateConfigDisplay(cfg) {
   if (cfg.inference_config) {
     const ic = cfg.inference_config;
     $('cfg-component').textContent = ic.component_id || '--';
+    if (ic.device) {
+      const dm = { auto: '自动检测', cpu: 'CPU', npu: 'NPU', cuda: 'CUDA' };
+      $('cfg-device-type').textContent = dm[ic.device] || ic.device;
+    }
   }
   // Collector config
   if (cfg.collector_config) {
@@ -329,10 +337,13 @@ function transformSchema(configSchema) {
       step: prop.multipleOf || (prop.type === 'number' ? 'any' : undefined),
     };
     if (prop.default !== undefined) defaults[key] = prop.default;
-    // Select for enum fields
+    // Select for enum or options fields
     if (prop.enum) {
       parameters[key].type = 'select';
       parameters[key].options = prop.enum.map(v => ({ value: v, label: String(v) }));
+    } else if (prop.options) {
+      parameters[key].type = 'select';
+      parameters[key].options = prop.options.map(v => ({ value: v, label: String(v) }));
     }
   }
   return { parameters, defaults };
@@ -434,9 +445,24 @@ async function startSession() {
         const bs = $('buffer_size');
         if (bs?.value) params.buffer_size = parseInt(bs.value);
     }
+    const params = collectSchemaParams();
+    // Collect buffer_size (different field for repeater vs real device)
+    const isRepeater = $('deviceSel')?.value?.includes('pluto-repeater');
+    if (isRepeater) {
+        const bs = $('buffer_size_repeater');
+        if (bs?.value) params.buffer_size = parseInt(bs.value);
+    } else {
+        const bs = $('buffer_size');
+        if (bs?.value) params.buffer_size = parseInt(bs.value);
+    }
+    // Extract device from schema params for top-level API field
+    const deviceValue = params.device;
+    if (deviceValue) delete params.device;  // remove from config, send top-level
+
     const data = await api('POST', '/api/v1/session/start', {
       component_id: componentId,
       config: params,
+      ...(deviceValue ? { device: deviceValue } : {}),
     });
 
     S.session_id = data.session_id;
@@ -519,6 +545,36 @@ async function stopSession() {
 
   // Reset button states
   updateButtonStates();
+}
+
+// ---- Inference stats handler ------------------------------------
+function handleInferenceStats(data) {
+  if (!data || !data.inference_count && data.inference_count !== 0) return;
+  // Update inference stats card
+  const el = id => document.getElementById(id);
+  if (el('if-inf')) el('if-inf').textContent = data.inference_count ?? '--';
+  if (el('if-noise')) el('if-noise').textContent = data.noise_count ?? '--';
+  if (el('if-nratio')) el('if-nratio').textContent =
+    data.noise_ratio != null ? (data.noise_ratio * 100).toFixed(1) + '%' : '--';
+  if (el('if-drone')) el('if-drone').textContent = data.drone_count ?? '--';
+  if (el('if-dratio')) el('if-dratio').textContent =
+    data.drone_ratio != null ? (data.drone_ratio * 100).toFixed(1) + '%' : '--';
+
+  // Model distribution list
+  const distEl = el('if-dist');
+  if (distEl) {
+    const dist = data.model_distribution || {};
+    const entries = Object.entries(dist).sort((a, b) => b[1] - a[1]);
+    if (entries.length === 0) {
+      distEl.innerHTML = '<span style="color:var(--mut);font-size:.7rem">暂无数据</span>';
+    } else {
+      distEl.innerHTML = entries.map(([model, count]) =>
+        '<div style="display:flex;justify-content:space-between;font-size:.72rem;padding:.15rem 0;border-bottom:1px solid rgba(255,255,255,.04)">' +
+        '<span style="color:var(--txt)">' + model + '</span>' +
+        '<span style="color:var(--acc2);font-weight:600">' + count + '</span></div>'
+      ).join('');
+    }
+  }
 }
 
 // ---- Scan devices -----------------------------------------------
