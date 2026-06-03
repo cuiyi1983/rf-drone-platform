@@ -231,21 +231,22 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             self._models_dir = os.path.join(os.path.dirname(__file__), 'models')
 
         # Determine ONNX Runtime providers (NPU > DML > CUDA > CPU)
-        # Use case-insensitive matching to handle variant provider name capitalizations
-        available_lower = [p.lower() for p in ort.get_available_providers()]
-        priority = [
-            ('acl', 'ACLExecutionProvider', 'NPU (ACL)'),
-            ('dml', 'DMLExecutionProvider', 'NPU (DirectML)'),
-            ('cuda', 'CUDAExecutionProvider', 'CUDA GPU'),
-        ]
+        available = ort.get_available_providers()
         providers = ['CPUExecutionProvider']
         device_name = 'CPU'
-        for key_lower, key_orig, name in priority:
-            if key_lower in available_lower:
-                # Find the actual provider name with correct capitalization
-                actual = ort.get_available_providers()[available_lower.index(key_lower)]
-                providers = [actual, 'CPUExecutionProvider']
-                device_name = name
+        for p in available:
+            pl = p.lower()
+            if pl.startswith('acl'):
+                providers = [p, 'CPUExecutionProvider']
+                device_name = 'NPU (ACL)'
+                break
+            elif pl.startswith('dml'):
+                providers = [p, 'CPUExecutionProvider']
+                device_name = 'NPU (DirectML)'
+                break
+            elif pl.startswith('cuda'):
+                providers = [p, 'CPUExecutionProvider']
+                device_name = 'CUDA GPU'
                 break
         logger.info(f'RFUAV inference component loading, using: {device_name}')
 
