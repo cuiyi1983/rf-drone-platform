@@ -39,6 +39,12 @@ jobs:
           source .venv/bin/activate
           pytest tests/system/test_repeater_api.py tests/system/test_sim_inference_stats.py -v --tb=short --capture=no
 
+      - name: Start frontend dev server
+        run: |
+          source .venv/bin/activate
+          cd frontend && npm run dev &
+          sleep 8
+
       - name: Run UI smoke tests
         run: |
           source .venv/bin/activate
