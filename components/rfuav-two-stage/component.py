@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
+import onnxruntime as ort
 
 # Add current directory to path for direct import
 _component_dir = os.path.dirname(os.path.abspath(__file__))
@@ -229,11 +230,25 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             # Default: models subdirectory of this component
             self._models_dir = os.path.join(os.path.dirname(__file__), 'models')
 
-        # Determine ONNX Runtime providers
-        if device == 'cuda':
-            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        # Determine ONNX Runtime providers (NPU > CUDA > CPU)
+        available = ort.get_available_providers()
+        priority = ['ACLExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+        for p in priority:
+            if p in available:
+                providers = [p, 'CPUExecutionProvider']
+                break
         else:
             providers = ['CPUExecutionProvider']
+
+        # Log which device is used
+        used = providers[0]
+        if used == 'ACLExecutionProvider':
+            device_name = 'NPU (ACL)'
+        elif used == 'CUDAExecutionProvider':
+            device_name = 'CUDA GPU'
+        else:
+            device_name = 'CPU'
+        logger.info(f'RFUAV inference component loading, using: {device_name}')
 
         # Load Stage1 YOLO model
         stage1_path = os.path.join(self._models_dir, 'stage1.onnx')
