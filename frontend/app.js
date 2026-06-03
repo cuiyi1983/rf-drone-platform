@@ -269,8 +269,8 @@ function updateConfigDisplay(cfg) {
     const ic = cfg.inference_config;
     $('cfg-component').textContent = ic.component_id || '--';
     if (ic.device) {
-      const dm = { auto: '自动检测', cpu: 'CPU', npu: 'NPU', cuda: 'CUDA' };
-      $('cfg-device-type').textContent = dm[ic.device] || ic.device;
+      // show provider name as-is from latest_stats
+      $('cfg-device-type').textContent = ic.device;
     }
   }
   // Collector config
