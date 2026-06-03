@@ -67,6 +67,12 @@ _MANIFEST = {
         ],
     },
     "config_schema": {
+        "device": {
+            "type": "string",
+            "title": "推理设备",
+            "default": "cpu",
+            "enum": ["auto", "cpu", "npu", "cuda"],
+        },
         "confidence_threshold": {
             "type": "number",
             "title": "置信度阈值",
