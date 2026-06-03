@@ -158,7 +158,7 @@ class Platform:
                             discovered['sim-inference']['config_schema'] = _raw_schema
                     except Exception:
                         pass
-                    logger.info(fPlatform: 发现内置组件 sim-inference)
+                    logger.info(f"Platform: found built-in component sim-inference")
                 except Exception as e:
                     logger.error(f"Platform: 加载内置 sim-inference 失败: {e}")
                 continue
