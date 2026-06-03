@@ -9,6 +9,7 @@ Implements IInferenceComponent interface.
 
 import logging
 import threading
+import collections
 import os
 import sys
 import time
@@ -92,6 +93,9 @@ class RFUAVTwoStageComponent(IInferenceComponent):
         self._stats_total = 0
         self._stats_s1_frames = 0
         self._stats_model_dist = {}
+        # Sliding window: (timestamp, is_noise, model_or_none)
+        self._inference_window: collections.deque = collections.deque()
+        self._window_lock = threading.Lock()
         self._log_lock = threading.Lock()
 
 
@@ -402,7 +406,43 @@ class RFUAVTwoStageComponent(IInferenceComponent):
 
         self._write_log(frame_id, stage1_detections, final_detections, power_db, spectrogram.shape, None, None)
 
+        # Record in sliding window
+        import time
+        now = time.monotonic()
+        is_noise = (len(final_detections) == 0)
+        top_model = final_detections[0]['model'] if final_detections else None
+        with self._window_lock:
+            self._inference_window.append((now, is_noise, top_model))
+
         return result
+
+    def get_inference_stats(self) -> dict:
+        """Return inference stats over the last 5-second sliding window."""
+        import time
+        now = time.monotonic()
+        window_seconds = 5.0
+        with self._window_lock:
+            # Evict old entries
+            while self._inference_window and (now - self._inference_window[0][0]) > window_seconds:
+                self._inference_window.popleft()
+            total = len(self._inference_window)
+            noise_count = sum(1 for _, is_noise, _ in self._inference_window if is_noise)
+            drone_count = total - noise_count
+            model_dist: dict = {}
+            for _, is_noise, model in self._inference_window:
+                if not is_noise:
+                    model_dist[model] = model_dist.get(model, 0) + 1
+        noise_ratio = round(noise_count / total, 4) if total > 0 else 0.0
+        drone_ratio = round(drone_count / total, 4) if total > 0 else 0.0
+        return {
+            "window_seconds": window_seconds,
+            "inference_count": total,
+            "noise_count": noise_count,
+            "noise_ratio": noise_ratio,
+            "drone_count": drone_count,
+            "drone_ratio": drone_ratio,
+            "model_distribution": dict(sorted(model_dist.items(), key=lambda x: -x[1]))
+        }
 
     def release(self) -> None:
         """Release model resources."""

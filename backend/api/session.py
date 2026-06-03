@@ -131,6 +131,26 @@ async def get_session_stats(session_id: str) -> dict:
     return {"session_id": session_id, **stats}
 
 
+@router.get("/{session_id}/inference_stats")
+async def get_inference_stats(session_id: str) -> dict:
+    """
+    GET /api/v1/session/{session_id}/inference_stats
+    获取推理统计（最近5秒窗口）：推理次数、noise次数/比例、有无人机次数/比例、机型分布
+    """
+    if _platform_ref is None:
+        raise HTTPException(status_code=500, detail="Platform not initialized")
+
+    if session_id not in _platform_ref._sessions:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    framework = _platform_ref._frameworks.get(session_id)
+    if framework is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    component_stats = framework.get_component_stats()
+    return {"session_id": session_id, **component_stats}
+
+
 @router.get("/{session_id}/latest_result")
 async def get_session_latest_result(session_id: str) -> dict:
     """

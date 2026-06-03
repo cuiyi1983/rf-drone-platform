@@ -199,3 +199,11 @@ class InferenceFramework:
             "inference_count": self._inference_count,
             "avg_inference_time_ms": round(avg_ms, 2)
         }
+
+    def get_component_stats(self) -> dict:
+        """Return component-level inference stats (e.g. drone model distribution)."""
+        if self._component is None:
+            return {}
+        if hasattr(self._component, "get_inference_stats"):
+            return self._component.get_inference_stats()
+        return {}
