@@ -46,7 +46,7 @@ def ensure_services():
         )
         pids["collector"] = col_proc
         started["collector"] = True
-        for _ in range(15):
+        for _ in range(30):
             time.sleep(1)
             if is_service_ready(COLLECTOR_URL, "/api/v1/collector/health"):
                 print("[conftest] Collector ready")
@@ -62,7 +62,7 @@ def ensure_services():
         )
         pids["platform"] = plt_proc
         started["platform"] = True
-        for _ in range(15):
+        for _ in range(30):
             time.sleep(1)
             if is_service_ready(PLATFORM_URL, "/health"):
                 print("[conftest] Platform ready")
