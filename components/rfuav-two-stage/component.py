@@ -30,7 +30,7 @@ import stage2_infer as s2_module
 iq_to_spectrogram = stft_module.iq_to_spectrogram
 SAMPLE_RATE = stft_module.SAMPLE_RATE
 NPERSEG = stft_module.NPERSEG
-HOP = stft_module.HOP
+HOP = stft_module.NOVLAP
 Stage1Infer = s1_module.Stage1Infer
 YOLO_INPUT_SIZE = s1_module.YOLO_INPUT_SIZE
 Stage2Infer = s2_module.Stage2Infer
