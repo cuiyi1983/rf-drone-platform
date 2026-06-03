@@ -9,7 +9,9 @@ Mock Inference Component - 模拟推理组件
     component = SimComponent()
 """
 
+import collections
 import random
+import threading
 import time
 from typing import Any
 
@@ -121,6 +123,8 @@ class SimComponent(IInferenceComponent):
         self._device: str = "cpu"
         self._infer_count: int = 0
         self._last_result_is_drone: bool = False
+        self._stats_lock = threading.Lock()
+        self._stats_window: collections.deque = collections.deque()  # (timestamp, is_noise, model_or_None)
 
     # ── IInferenceComponent 实现 ───────────────────────────────
 
@@ -194,12 +198,19 @@ class SimComponent(IInferenceComponent):
             confidence = round(random.uniform(threshold + 0.01, 0.995), 3)
             # 使用真实的 center_freq / 1e6 MHz 值
             freq_mhz = round(center_freq / 1e6, 3)
+            chosen_model = random.choice(models)
             detections.append({
-                "model": random.choice(models),
+                "model": chosen_model,
                 "confidence": confidence,
                 "frequency": freq_mhz,
                 "power_dbm": power_dbm,
             })
+
+        # Record in stats sliding window
+        now = time.monotonic()
+        top_model = detections[0]["model"] if detections else None
+        with self._stats_lock:
+            self._stats_window.append((now, not has_drone, top_model))
 
         return {
             "frame_id": iq_frame.get("frame_id", 0),
@@ -214,6 +225,8 @@ class SimComponent(IInferenceComponent):
         """释放资源（无真实资源）。"""
         self._config = {}
         self._infer_count = 0
+        with self._stats_lock:
+            self._stats_window.clear()
 
     def health_check(self) -> bool:
         """健康检查，始终返回 True。"""
@@ -224,6 +237,36 @@ class SimComponent(IInferenceComponent):
     def get_config(self) -> dict:
         """返回当前生效的配置。"""
         return dict(self._config)
+
+    def get_inference_stats(self) -> dict:
+        """
+        返回最近 5 秒滑动窗口内的推理统计，供 inference_stats API 使用。
+        统计窗口与 rfuav-two-stage 保持一致。
+        """
+        now = time.monotonic()
+        window_seconds = 5.0
+        with self._stats_lock:
+            # Evict entries older than window
+            while self._stats_window and (now - self._stats_window[0][0]) > window_seconds:
+                self._stats_window.popleft()
+            total = len(self._stats_window)
+            noise_count = sum(1 for _, is_noise, _ in self._stats_window if is_noise)
+            drone_count = total - noise_count
+            model_dist: dict = {}
+            for _, is_noise, model in self._stats_window:
+                if not is_noise and model:
+                    model_dist[model] = model_dist.get(model, 0) + 1
+        noise_ratio = round(noise_count / total, 4) if total > 0 else 0.0
+        drone_ratio = round(drone_count / total, 4) if total > 0 else 0.0
+        return {
+            "window_seconds": window_seconds,
+            "inference_count": total,
+            "noise_count": noise_count,
+            "noise_ratio": noise_ratio,
+            "drone_count": drone_count,
+            "drone_ratio": drone_ratio,
+            "model_distribution": dict(sorted(model_dist.items(), key=lambda x: -x[1])) if model_dist else {},
+        }
 
     def get_current_config_schema(self) -> dict:
         """返回 config_schema（同 manifest 中的定义）。"""

@@ -31,6 +31,15 @@ config_schema:
     type: integer
     default: 10
     description: Maximum number of detections to return
+  device:
+    type: string
+    default: auto
+    description: "Inference device: auto=NPU if available, cpu, npu, cuda"
+    enum:
+      - auto
+      - cpu
+      - npu
+      - cuda
 
 stage1:
   model: stage1.onnx

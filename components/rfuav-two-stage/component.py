@@ -9,7 +9,6 @@ Implements IInferenceComponent interface.
 
 import logging
 import threading
-import collections
 import os
 import sys
 import time
@@ -18,7 +17,6 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
-import onnxruntime as ort
 
 # Add current directory to path for direct import
 _component_dir = os.path.dirname(os.path.abspath(__file__))
@@ -93,9 +91,6 @@ class RFUAVTwoStageComponent(IInferenceComponent):
         self._stats_total = 0
         self._stats_s1_frames = 0
         self._stats_model_dist = {}
-        # Sliding window: (timestamp, is_noise, model_or_none)
-        self._inference_window: collections.deque = collections.deque()
-        self._window_lock = threading.Lock()
         self._log_lock = threading.Lock()
 
 
@@ -207,10 +202,7 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             },
             "config_schema": {
                 "confidence_threshold": {"type": "number", "default": 0.5},
-                "max_detections": {"type": "integer", "default": 10},
-                "device": {"type": "string", "default": "auto",
-                           "options": ["auto", "cpu", "npu", "cuda"],
-                           "description": "推理设备: auto=自动检测, cpu=CPU, npu=NPU, cuda=CUDA"}
+                "max_detections": {"type": "integer", "default": 10}
             },
             "class_labels": CLASS_LABELS
         }
@@ -237,47 +229,11 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             # Default: models subdirectory of this component
             self._models_dir = os.path.join(os.path.dirname(__file__), 'models')
 
-        # Determine ONNX Runtime providers based on device config or auto-detect
-        requested = config.get("device", "auto")
-        available = ort.get_available_providers()
-        providers = ["CPUExecutionProvider"]
-        device_name = "CPU"
-
-        if requested != "auto":
-            if requested == "npu":
-                for p in available:
-                    pl = p.lower()
-                    if pl.startswith("acl") or pl.startswith("dml"):
-                        providers = [p, "CPUExecutionProvider"]
-                        device_name = "NPU (ACL)" if pl.startswith("acl") else "NPU (DirectML)"
-                        break
-                if providers == ["CPUExecutionProvider"]:
-                    logger.warning("NPU requested but not available, falling back to CPU")
-            elif requested == "cuda":
-                for p in available:
-                    if p.lower().startswith("cuda"):
-                        providers = [p, "CPUExecutionProvider"]
-                        device_name = "CUDA GPU"
-                        break
-                if providers == ["CPUExecutionProvider"]:
-                    logger.warning("CUDA requested but not available, falling back to CPU")
+        # Determine ONNX Runtime providers
+        if device == 'cuda':
+            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
         else:
-            for p in available:
-                pl = p.lower()
-                if pl.startswith("acl"):
-                    providers = [p, "CPUExecutionProvider"]
-                    device_name = "NPU (ACL)"
-                    break
-                elif pl.startswith("dml"):
-                    providers = [p, "CPUExecutionProvider"]
-                    device_name = "NPU (DirectML)"
-                    break
-                elif pl.startswith("cuda"):
-                    providers = [p, "CPUExecutionProvider"]
-                    device_name = "CUDA GPU"
-                    break
-
-        logger.info(f"RFUAV inference component loading, device={requested}, using: {device_name}")
+            providers = ['CPUExecutionProvider']
 
         # Load Stage1 YOLO model
         stage1_path = os.path.join(self._models_dir, 'stage1.onnx')
@@ -406,41 +362,7 @@ class RFUAVTwoStageComponent(IInferenceComponent):
 
         self._write_log(frame_id, stage1_detections, final_detections, power_db, spectrogram.shape, None, None)
 
-        # Record in sliding window
-        now = time.monotonic()
-        is_noise = (len(final_detections) == 0)
-        top_model = final_detections[0]['model'] if final_detections else None
-        with self._window_lock:
-            self._inference_window.append((now, is_noise, top_model))
-
         return result
-
-    def get_inference_stats(self) -> dict:
-        """Return inference stats over the last 5-second sliding window."""
-        now = time.monotonic()
-        window_seconds = 5.0
-        with self._window_lock:
-            # Evict old entries
-            while self._inference_window and (now - self._inference_window[0][0]) > window_seconds:
-                self._inference_window.popleft()
-            total = len(self._inference_window)
-            noise_count = sum(1 for _, is_noise, _ in self._inference_window if is_noise)
-            drone_count = total - noise_count
-            model_dist: dict = {}
-            for _, is_noise, model in self._inference_window:
-                if not is_noise:
-                    model_dist[model] = model_dist.get(model, 0) + 1
-        noise_ratio = round(noise_count / total, 4) if total > 0 else 0.0
-        drone_ratio = round(drone_count / total, 4) if total > 0 else 0.0
-        return {
-            "window_seconds": window_seconds,
-            "inference_count": total,
-            "noise_count": noise_count,
-            "noise_ratio": noise_ratio,
-            "drone_count": drone_count,
-            "drone_ratio": drone_ratio,
-            "model_distribution": dict(sorted(model_dist.items(), key=lambda x: -x[1]))
-        }
 
     def release(self) -> None:
         """Release model resources."""
@@ -488,7 +410,13 @@ COMPONENT_ENTRY = {
         },
         "config_schema": {
             "confidence_threshold": {"type": "number", "default": 0.5},
-            "max_detections": {"type": "integer", "default": 10}
+            "max_detections": {"type": "integer", "default": 10},
+            "device": {
+                "type": "string",
+                "default": "auto",
+                "description": "Inference device: auto=NPU if available, cpu, npu, cuda",
+                "enum": ["auto", "cpu", "npu", "cuda"],
+            },
         }
     }
 }
