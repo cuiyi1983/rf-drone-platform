@@ -351,7 +351,7 @@ function transformSchema(configSchema) {
 
 function renderSchemaParams(schema) {
   const container = $('schema-params');
-  const transformed = transformSchema(schema);
+  const transformed = transformSchema(schema && schema.config_schema ? schema.config_schema : schema);
   const params = transformed.parameters;
   const defaults = transformed.defaults;
 
