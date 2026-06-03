@@ -43,7 +43,7 @@ _MANIFEST = {
         "type": "inference",
     },
     "capability": {
-        "device_support": ["cpu", "gpu", "npu"],
+        "device_support": ["cpu", "gpu", "dml"],
         "async_inference": False,
     },
     "collector_requirements": {
@@ -71,7 +71,7 @@ _MANIFEST = {
             "type": "string",
             "title": "推理设备",
             "default": "cpu",
-            "enum": ["auto", "cpu", "npu", "cuda"],
+            "enum": ["auto", "cpu", "dml", "cuda", "qnn"],
         },
         "confidence_threshold": {
             "type": "number",
