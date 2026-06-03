@@ -229,12 +229,15 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             # Default: models subdirectory of this component
             self._models_dir = os.path.join(os.path.dirname(__file__), 'models')
 
-        # Determine ONNX Runtime providers
-        device = config.get("device", "auto")
-        if device == 'cuda':
-            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        else:
-            providers = ['CPUExecutionProvider']
+        # Determine ONNX Runtime providers based on device selection and available providers.
+        # This method is called with the raw device string from the UI ("auto", "cpu", "dml", "cuda", "qnn").
+        try:
+            import onnxruntime as ort
+            available = ort.get_available_providers()
+        except Exception:
+            available = ["CPUExecutionProvider"]
+
+        providers = self._map_device_to_onnx_providers(device, available)
 
         # Load Stage1 YOLO model
         stage1_path = os.path.join(self._models_dir, 'stage1.onnx')
@@ -249,6 +252,58 @@ class RFUAVTwoStageComponent(IInferenceComponent):
         self._stage2 = Stage2Infer(stage2_path, providers=providers)
 
         self._initialized = True
+
+    @staticmethod
+    def _map_device_to_onnx_providers(device: str, available: list[str]) -> list[str]:
+        """
+        Map device UI value to ONNX Runtime providers list.
+
+        Args:
+            device: Device string from UI ("auto", "cpu", "dml", "cuda", "qnn")
+            available: ort.get_available_providers() result
+
+        Returns:
+            ONNX Runtime providers list in priority order
+        """
+        cpu_first = ["CPUExecutionProvider"]
+
+        if device == "cpu":
+            return cpu_first
+
+        if device == "auto":
+            priority = [
+                "CUDAExecutionProvider",
+                "DmlExecutionProvider",
+                "QNNExecutionProvider",
+                "CannExecutionProvider",
+                "AzureExecutionProvider",
+            ]
+            for p in priority:
+                if p in available:
+                    return [p, "CPUExecutionProvider"]
+            return cpu_first
+
+        if device == "cuda":
+            if "CUDAExecutionProvider" in available:
+                return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            logger.warning("[rfuav-two-stage] CUDA requested but not available, falling back to CPU")
+            return cpu_first
+
+        if device == "dml":
+            if "DmlExecutionProvider" in available:
+                return ["DmlExecutionProvider", "CPUExecutionProvider"]
+            logger.warning("[rfuav-two-stage] DML requested but not available, falling back to CPU")
+            return cpu_first
+
+        if device == "qnn":
+            if "QNNExecutionProvider" in available:
+                return ["QNNExecutionProvider", "CPUExecutionProvider"]
+            logger.warning("[rfuav-two-stage] QNN requested but not available, falling back to CPU")
+            return cpu_first
+
+        # Unknown device → CPU
+        logger.warning(f"[rfuav-two-stage] Unknown device '{device}', defaulting to CPU")
+        return cpu_first
 
     def infer(self, iq_frame: dict) -> dict:
         """
@@ -415,8 +470,8 @@ COMPONENT_ENTRY = {
             "device": {
                 "type": "string",
                 "default": "auto",
-                "description": "Inference device: auto=NPU if available, cpu, npu, cuda",
-                "enum": ["auto", "cpu", "npu", "cuda"],
+                "description": "Inference device: auto=NPU/GPU if available, cpu, dml, cuda, qnn",
+                "enum": ["auto", "cpu", "dml", "cuda", "qnn"],
             },
         }
     }

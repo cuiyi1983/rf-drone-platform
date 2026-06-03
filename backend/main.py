@@ -59,6 +59,9 @@ class Platform:
         # 组件注册表（mock）
         self._components: dict[str, dict] = {}
 
+        # ONNX Runtime 可用 providers（启动时探测）
+        self._available_providers: list[str] = []
+
         # 设备注册表（mock）
         self._devices: dict[str, dict] = {}
 
@@ -78,6 +81,10 @@ class Platform:
 
         # 注册模拟组件
         self._discover_components()
+
+        # 探测 ONNX Runtime 可用 providers
+        self._available_providers = self._detect_onnx_providers()
+        logger.info(f"Platform: ONNX Runtime 可用 providers: {self._available_providers}")
 
         # 注册模拟设备
         await self._discover_devices()
@@ -265,7 +272,7 @@ class Platform:
         if not comp_cls:
             return {"error": f"组件 {component_id} 未找到或不支持实例化", "code": 1003}
         component_instance = comp_cls()
-        device = config.get("device", "cpu")
+        device = config.get("device", "auto")  # 前端选择的设备（"auto"/"cpu"/"dml"/"cuda"/"qnn"）
 
         if not framework.load_component(component_id, component_instance, config, device):
             return {"error": "组件初始化失败", "code": 1002}
@@ -529,6 +536,76 @@ class Platform:
             import logging
             logging.getLogger(__name__).error(f"Platform: 刷新设备失败: {type(e).__name__} {e}", exc_info=True)
         return {"devices": list(self._devices.values())}
+
+    # ── ONNX Runtime provider 探测 ─────────────────────────────────
+
+    def _detect_onnx_providers(self) -> list[str]:
+        """探测当前环境可用的 ONNX Runtime execution providers."""
+        try:
+            import onnxruntime as ort
+            available = ort.get_available_providers()
+            logger.info(f"Platform: ONNX Runtime providers: {available}")
+            return available
+        except Exception as e:
+            logger.warning(f"Platform: 无法探测 ONNX Runtime providers: {e}")
+            return ["CPUExecutionProvider"]
+
+    # ── device string → ONNX provider list 映射 ──────────────────
+
+    @staticmethod
+    def _map_device_to_providers(device: str, available: list[str]) -> list[str]:
+        """
+        将 device 字符串（ui value）映射为 ONNX Runtime providers list。
+
+        device 值（frontend UI select 的 value）：
+          - "auto"    → 选择最快可用 provider（GPU/DML/NPU > CPU）
+          - "cpu"     → 仅 CPU
+          - "cuda"    → CUDA（需可用）
+          - "dml"     → DirectML（Windows GPU 加速）
+          - "qnn"     → Qualcomm QNN（NPU）
+
+        available：onnxruntime.get_available_providers() 返回的列表
+        """
+        cpu_first = ["CPUExecutionProvider"]
+
+        if device == "cpu":
+            return cpu_first
+
+        if device == "auto":
+            # 优先顺序：GPU/NPU 加速 > CPU
+            priority = [
+                "CUDAExecutionProvider",
+                "DmlExecutionProvider",
+                "QNNExecutionProvider",
+                "CannExecutionProvider",
+                "AzureExecutionProvider",
+            ]
+            for p in priority:
+                if p in available:
+                    return [p, "CPUExecutionProvider"]
+            return cpu_first
+
+        if device == "cuda":
+            if "CUDAExecutionProvider" in available:
+                return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            logger.warning("Platform: CUDA requested but CUDAExecutionProvider not available")
+            return cpu_first
+
+        if device == "dml":
+            if "DmlExecutionProvider" in available:
+                return ["DmlExecutionProvider", "CPUExecutionProvider"]
+            logger.warning("Platform: DML requested but DmlExecutionProvider not available")
+            return cpu_first
+
+        if device == "qnn":
+            if "QNNExecutionProvider" in available:
+                return ["QNNExecutionProvider", "CPUExecutionProvider"]
+            logger.warning("Platform: QNN requested but QNNExecutionProvider not available")
+            return cpu_first
+
+        # 未知 device string，默认 CPU
+        logger.warning(f"Platform: Unknown device '{device}', defaulting to CPU")
+        return cpu_first
 
     # ── Collector 通信 ───────────────────────────────────────────
 

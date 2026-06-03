@@ -34,12 +34,13 @@ config_schema:
   device:
     type: string
     default: auto
-    description: "Inference device: auto=NPU if available, cpu, npu, cuda"
+    description: "Inference device: auto=NPU/GPU if available, cpu, dml, cuda, qnn"
     enum:
       - auto
       - cpu
-      - npu
+      - dml
       - cuda
+      - qnn
 
 stage1:
   model: stage1.onnx

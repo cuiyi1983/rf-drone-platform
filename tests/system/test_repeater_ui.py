@@ -355,15 +355,15 @@ def test_component_device_dropdown_renders(ensure_services):
             "Array.from(document.querySelectorAll('#sp_device option')).map(o=>({v:o.value,t:o.textContent}))"
         )
         values = [o['v'] for o in options]
-        assert 'npu' in values, f"NPU not in device options: {options}"
+        assert 'dml' in values, f"DML not in device options: {options}"
         assert 'auto' in values, f"auto not in device options: {options}"
         assert 'cpu' in values, f"cpu not in device options: {options}"
 
-        # --- TC-SYS-03.4: Selecting NPU updates the select value ---
-        page.locator("#sp_device").select_option('npu')
+        # --- TC-SYS-03.4: Selecting DML updates the select value ---
+        page.locator("#sp_device").select_option('dml')
         page.wait_for_timeout(200)
         selected = page.locator("#sp_device").input_value()
-        assert selected == 'npu', f"Device select should be 'npu' after selection, got: {selected}"
+        assert selected == 'dml', f"Device select should be 'dml' after selection, got: {selected}"
 
         browser.close()
 
@@ -421,12 +421,12 @@ def test_rfuav_component_schema_renders_device(ensure_services):
             "Array.from(document.querySelectorAll('#sp_device option')).map(o=>({v:o.value,t:o.textContent}))"
         )
         values = [o['v'] for o in options]
-        assert 'npu' in values, f"NPU not in rfuav device options: {options}"
+        assert 'dml' in values, f"DML not in rfuav device options: {options}"
         assert 'auto' in values, f"auto not in rfuav device options: {options}"
 
-        # --- TC-SYS-04.4: device can be set to NPU and persists ---
-        page.locator("#sp_device").select_option('npu')
+        # --- TC-SYS-04.4: device can be set to DML and persists ---
+        page.locator("#sp_device").select_option('dml')
         page.wait_for_timeout(200)
-        assert page.locator("#sp_device").input_value() == 'npu'
+        assert page.locator("#sp_device").input_value() == 'dml'
 
         browser.close()
