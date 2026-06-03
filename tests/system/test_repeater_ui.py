@@ -129,6 +129,15 @@ FRONTEND_AVAILABLE = os.path.isdir(os.path.join(os.path.dirname(__file__), '..',
 def skip_if_no_frontend():
     if not FRONTEND_AVAILABLE:
         pytest.skip("frontend/ not available in CI (not tracked in git)", allow_module_level=True)
+import os
+
+# Skip all UI tests on CI when frontend is not available (not in git)
+pytestmark = pytest.mark.skipif(
+    not os.path.isdir(os.path.join(os.path.dirname(__file__), '..', '..', 'frontend')),
+    reason="frontend/ not available in CI (not tracked in git)"
+)
+
+
 
 def test_page_loads(ensure_services):
     """TC-SYS-02.1: Web UI loads successfully."""
@@ -449,9 +458,7 @@ def test_session_stats_returns_actual_provider(ensure_services):
         page = browser.new_page()
 
         try:
-                skip_if_no_frontend()
-        skip_if_no_frontend()
-    page.goto("http://localhost:5100/static", timeout=10000)
+            page.goto("http://localhost:5100/static", timeout=10000)
         except Exception:
             page.goto("http://localhost:5100/static", timeout=10000)
 
