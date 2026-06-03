@@ -407,7 +407,6 @@ class RFUAVTwoStageComponent(IInferenceComponent):
         self._write_log(frame_id, stage1_detections, final_detections, power_db, spectrogram.shape, None, None)
 
         # Record in sliding window
-        import time
         now = time.monotonic()
         is_noise = (len(final_detections) == 0)
         top_model = final_detections[0]['model'] if final_detections else None
@@ -418,7 +417,6 @@ class RFUAVTwoStageComponent(IInferenceComponent):
 
     def get_inference_stats(self) -> dict:
         """Return inference stats over the last 5-second sliding window."""
-        import time
         now = time.monotonic()
         window_seconds = 5.0
         with self._window_lock:
