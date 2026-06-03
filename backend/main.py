@@ -145,7 +145,20 @@ class Platform:
                         'io': _se['manifest'].get('io', {}),
                         '_component_class': _se.get('component_class'),
                     }
-                    logger.info(f"Platform: 发现内置组件 sim-inference")
+                    # sim-inference: also probe providers for dynamic device enum
+                    _comp_entry = discovered.get('sim-inference', {})
+                    _raw_schema = dict(_comp_entry.get('config_schema', {}))
+                    try:
+                        import onnxruntime as ort
+                        _avail = ort.get_available_providers()
+                        if 'device' in _raw_schema and 'enum' in _raw_schema.get('device', {}):
+                            _raw_schema['device'] = dict(_raw_schema['device'])
+                            _raw_schema['device']['enum'] = _avail
+                            _raw_schema['device']['default'] = _avail[0] if _avail else 'CPUExecutionProvider'
+                            discovered['sim-inference']['config_schema'] = _raw_schema
+                    except Exception:
+                        pass
+                    logger.info(fPlatform: 发现内置组件 sim-inference)
                 except Exception as e:
                     logger.error(f"Platform: 加载内置 sim-inference 失败: {e}")
                 continue
@@ -177,13 +190,26 @@ class Platform:
                 entry = mod.COMPONENT_ENTRY
                 comp_id = entry['id']
                 manifest_comp = manifest.get('component', manifest)
+                raw_schema = manifest.get('config_schema', {})
+
+                # Dynamically probe ONNX providers and replace device enum in schema
+                try:
+                    import onnxruntime as ort
+                    available = ort.get_available_providers()
+                    if 'device' in raw_schema and 'enum' in raw_schema.get('device', {}):
+                        raw_schema = dict(raw_schema)
+                        raw_schema['device'] = dict(raw_schema['device'])
+                        raw_schema['device']['enum'] = available
+                        raw_schema['device']['default'] = available[0] if available else 'CPUExecutionProvider'
+                except Exception:
+                    pass
 
                 discovered[comp_id] = {
                     'id': comp_id,
                     'name': entry.get('name', comp_id),
                     'version': entry.get('version', '1.0.0'),
                     'type': manifest_comp.get('component_type', 'inference'),
-                    'config_schema': manifest.get('config_schema', {}),
+                    'config_schema': raw_schema,
                     'collector_requirements': manifest.get('collector_requirements', {}),
                     'io': manifest.get('io', {}),
                     '_component_class': entry.get('component_class'),
@@ -778,7 +804,8 @@ class Platform:
             "dropped_rate": qstats.get("dropped_rate", 0),
             "buffer_level": qstats.get("buffer_level", 0),
             "total_frames": qstats.get("frames_received", 0),
-            "total_dropped": qstats.get("frames_dropped", 0)
+            "total_dropped": qstats.get("frames_dropped", 0),
+            "device": qstats.get("provider", "unknown"),
         })
 
     def _on_error(self, session_id: str, message: str) -> None:

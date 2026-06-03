@@ -238,6 +238,7 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             available = ["CPUExecutionProvider"]
 
         providers = self._map_device_to_onnx_providers(device, available)
+        self._active_providers = providers
 
         # Load Stage1 YOLO model
         stage1_path = os.path.join(self._models_dir, 'stage1.onnx')
@@ -438,6 +439,12 @@ class RFUAVTwoStageComponent(IInferenceComponent):
             return True
         except Exception:
             return False
+
+    def get_current_provider(self) -> str:
+        """Return the ONNX provider actually in use, e.g. 'DmlExecutionProvider'."""
+        if hasattr(self, '_active_providers') and self._active_providers:
+            return self._active_providers[0]
+        return 'CPUExecutionProvider'
 
 # ── COMPONENT_ENTRY（供 Platform 自动扫描注册）─────────────────────────────
 COMPONENT_ENTRY = {

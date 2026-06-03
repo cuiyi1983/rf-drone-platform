@@ -197,7 +197,8 @@ class InferenceFramework:
             "frames_dropped": qstats.frames_dropped,
             "dropped_rate": round(self._frame_queue.dropped_rate, 4),
             "inference_count": self._inference_count,
-            "avg_inference_time_ms": round(avg_ms, 2)
+            "avg_inference_time_ms": round(avg_ms, 2),
+            "provider": self._component.get_current_provider() if self._component and hasattr(self._component, 'get_current_provider') else "CPUExecutionProvider",
         }
 
     def get_component_stats(self) -> dict:

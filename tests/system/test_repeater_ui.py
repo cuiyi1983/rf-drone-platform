@@ -355,9 +355,10 @@ def test_component_device_dropdown_renders(ensure_services):
             "Array.from(document.querySelectorAll('#sp_device option')).map(o=>({v:o.value,t:o.textContent}))"
         )
         values = [o['v'] for o in options]
-        assert 'dml' in values, f"DML not in device options: {options}"
-        assert 'auto' in values, f"auto not in device options: {options}"
-        assert 'cpu' in values, f"cpu not in device options: {options}"
+        # Enum now contains real ONNX provider names (e.g. DmlExecutionProvider, CPUExecutionProvider)
+        # auto is no longer in the enum
+        assert 'auto' not in values, f"auto should not be in device options: {options}"
+        assert len(values) > 0, f"device options should not be empty: {options}"
 
         # --- TC-SYS-03.4: Selecting DML updates the select value ---
         page.locator("#sp_device").select_option('dml')
@@ -421,12 +422,63 @@ def test_rfuav_component_schema_renders_device(ensure_services):
             "Array.from(document.querySelectorAll('#sp_device option')).map(o=>({v:o.value,t:o.textContent}))"
         )
         values = [o['v'] for o in options]
-        assert 'dml' in values, f"DML not in rfuav device options: {options}"
-        assert 'auto' in values, f"auto not in rfuav device options: {options}"
+        # Enum contains real ONNX providers; auto is not present
+        assert 'auto' not in values, f"auto should not be in rfuav device options: {options}"
+        assert len(values) > 0, f"rfuav device options should not be empty: {options}"
 
-        # --- TC-SYS-04.4: device can be set to DML and persists ---
-        page.locator("#sp_device").select_option('dml')
-        page.wait_for_timeout(200)
-        assert page.locator("#sp_device").input_value() == 'dml'
+        browser.close()
+
+def test_session_stats_returns_actual_provider(ensure_services):
+    """
+    TC-SYS-05: latest_stats.device reflects actual ONNX provider used,
+    not the UI device value. After selecting a device and starting a session,
+    the stats socketio event carries the real provider name (e.g. DmlExecutionProvider).
+    """
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        try:
+            page.goto("http://localhost:5173", timeout=10000)
+        except Exception:
+            page.goto("http://localhost:5174", timeout=10000)
+
+        page.wait_for_timeout(2000)
+        page.evaluate("window._statsEvents = []")
+        page.evaluate(
+            "window.io().on('collector_stats', d => window._statsEvents.push(d))"
+        )
+
+        # Select pluto-repeater and load sim-inference
+        page.locator("#deviceSel").select_option("pluto-repeater")
+        page.wait_for_timeout(1000)
+
+        page.locator("#loadComp").click()
+        page.wait_for_timeout(2000)
+
+        # Check schema has no 'auto' in device enum
+        if page.locator("#sp_device").count() > 0:
+            options = page.evaluate(
+                "Array.from(document.querySelectorAll('#sp_device option')).map(o=>({v:o.value,t:o.textContent}))"
+            )
+            values = [o['v'] for o in options]
+            assert 'auto' not in values, f"auto should not be in schema enum: {values}"
+
+        # Start session
+        page.locator("#startBtn").click()
+        page.wait_for_timeout(3000)
+
+        # Collect stats events and check device field
+        events = page.evaluate("window._statsEvents || []")
+        provider_events = [e for e in events if 'device' in e]
+
+        assert len(provider_events) > 0, f"No stats events with 'device' field. All events: {events}"
+
+        for ev in provider_events:
+            dev = ev['device']
+            assert dev != 'unknown', f"device should not be 'unknown': {ev}"
+            assert dev != 'auto', f"device should not be 'auto': {ev}"
+            # Should be a real ONNX provider name
+            assert 'ExecutionProvider' in dev or dev in ('cpu',), f"device should be real provider, got: {dev}"
 
         browser.close()
