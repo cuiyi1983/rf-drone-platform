@@ -44,7 +44,8 @@ def ensure_services():
     p = subprocess.Popen([_python_bin, "-m", "http.server", "5102"],
         cwd=frontend_root, stdout=open("/tmp/frontend.log","w"), stderr=subprocess.STDOUT)
     print(f"[conftest] http.server PID={p.pid}")
-    time.sleep(8)
+    time.sleep(12)
+
     for url, path, name in [
         (COLLECTOR_URL, "/api/v1/collector/health", "Collector"),
         (PLATFORM_URL, "/health", "Platform"),
@@ -53,6 +54,32 @@ def ensure_services():
             if is_ready(url, path): break
             time.sleep(1)
         else: assert False, f"{name} did not become ready"
+
+    # Wait for all components (including slow-loading rfuav-two-stage) to register.
+    # Component registration happens in uvicorn startup() and can take 10+ seconds
+    # due to model loading in InferenceFramework.
+    for _ in range(40):
+        try:
+            r = requests.get(f"{PLATFORM_URL}/api/v1/components", timeout=2)
+            if r.status_code == 200:
+                comps = r.json().get("components", [])
+                # rfuav-two-stage takes longer to load; wait until we have 2 components
+                if len(comps) >= 2:
+                    print(f"\n[conftest] All {len(comps)} components registered: {[c['id'] for c in comps]}")
+                    break
+                print(f"[conftest] Waiting for components... ({len(comps)}/2 registered so far)")
+        except Exception as e:
+            print(f"[conftest] Component poll error: {e}")
+        time.sleep(1)
+    else:
+        # Fallback: dump what we have
+        try:
+            r = requests.get(f"{PLATFORM_URL}/api/v1/components", timeout=2)
+            comps = r.json().get("components", []) if r.status_code == 200 else []
+        except Exception:
+            comps = []
+        print(f"\n[conftest] WARNING: only {len(comps)} components registered after 40s: {[c['id'] for c in comps]}")
+
     for _ in range(20):
         try:
             r = requests.get(FRONTEND_URL, timeout=2)
@@ -285,8 +312,8 @@ def test_component_device_dropdown_renders(ensure_services):
         _click_tab(page, "cfg")
         page.wait_for_timeout(1000)
 
-        # Load sim-inference component
-        for _ in range(10):
+        # Load sim-inference component - poll until it appears (may still be loading at test start)
+        for _ in range(20):
             comp_opts = page.locator("#msel option").all_inner_texts()
             if comp_opts and any("sim-inference" in o for o in comp_opts):
                 break
@@ -303,9 +330,15 @@ def test_component_device_dropdown_renders(ensure_services):
         page.locator("#msel").select_option(sim["v"])
         page.wait_for_timeout(300)
 
-        # Click Load Component
+        # Click Load Component and wait for schema to render
         page.locator("#mlbtn").click()
-        page.wait_for_timeout(1500)
+        # Poll for #sp_device to appear (component schema loads asynchronously)
+        for _ in range(20):
+            if page.locator("#sp_device").count() > 0 and page.locator("#sp_device").is_visible():
+                break
+            page.wait_for_timeout(500)
+        else:
+            pytest.fail("#sp_device never appeared after clicking Load Component")
 
         # --- TC-SYS-03.1: schema-params container is visible ---
         schema_container = page.locator("#schema-params")
@@ -348,8 +381,8 @@ def test_rfuav_component_schema_renders_device(ensure_services):
         _click_tab(page, "cfg")
         page.wait_for_timeout(1000)
 
-        # Load rfuav-two-stage component
-        for _ in range(10):
+        # Load rfuav-two-stage component - poll until it appears (rfuav loads last)
+        for _ in range(30):
             comp_opts = page.locator("#msel option").all_inner_texts()
             if comp_opts and any("rfuav" in o.lower() for o in comp_opts):
                 break
@@ -366,9 +399,14 @@ def test_rfuav_component_schema_renders_device(ensure_services):
         page.locator("#msel").select_option(rfuav["v"])
         page.wait_for_timeout(300)
 
-        # Click Load Component
+        # Click Load Component and wait for schema to render
         page.locator("#mlbtn").click()
-        page.wait_for_timeout(1500)
+        for _ in range(20):
+            if page.locator("#sp_device").count() > 0 and page.locator("#sp_device").is_visible():
+                break
+            page.wait_for_timeout(500)
+        else:
+            pytest.fail("#sp_device never appeared after loading rfuav component")
 
         # --- TC-SYS-04.1: schema-params visible ---
         assert page.locator("#schema-params").is_visible(), "#schema-params should be visible for rfuav"
