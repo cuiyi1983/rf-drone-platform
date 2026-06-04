@@ -131,7 +131,7 @@ def skip_if_no_frontend():
         pytest.skip("frontend/ not available in CI (not tracked in git)", allow_module_level=True)
 # Skip ALL UI tests: frontend/ is not tracked in git and cannot be served in CI.
 # The API tests (test_repeater_api.py) provide sufficient coverage.
-pytestmark = pytest.mark.skip(reason="frontend/ not in git; requires dedicated frontend server in CI")
+pytestmark = pytest.mark.skipif(not FRONTEND_AVAILABLE, reason="frontend not in git")
 
 
 
@@ -220,17 +220,14 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
         page.locator("#mlbtn").click()
         page.wait_for_timeout(1000)
 
-        # Connect to collector
+        # Connect to collector — wait for UI disabled state
         page.locator("#connBtn").click()
-        page.wait_for_timeout(3000)
-
-        # Verify connection via API directly (button text doesn't change, disabled state does)
-        conn_resp = requests.post("http://localhost:5101/api/v1/collector/connect",
-                                  json={"device_uri": "file:iq_recording.bin"}, timeout=5)
-        print(f"[DEBUG] connect API: {conn_resp.json()}")
-
-        if conn_resp.json().get("code") != 0:
-            pytest.fail(f"Collector connection API failed: {conn_resp.json()}")
+        for _ in range(20):
+            if page.locator("#connBtn").is_disabled():
+                break
+            page.wait_for_timeout(500)
+        else:
+            pytest.fail("connBtn never became disabled after clicking connect")
 
         # === OBSERVATION PAGE ===
         _click_tab(page, "obs")
@@ -239,10 +236,23 @@ def test_repeater_session_stats(ensure_services, stop_active_sessions):
         # Start acquisition
         btn_s_before = page.locator("#btnS").inner_text() if page.locator("#btnS").count() else "(no btn)"
         page.locator("#btnS").click()
-        page.wait_for_timeout(2000)
-        btn_s_after = page.locator("#btnS, #btnX").first.inner_text()
+
+        # Wait for acquisition to actually start (buf-coll == 采集中)
+        for _ in range(20):
+            try:
+                coll_text = page.locator("#buf-coll").inner_text()
+                if coll_text == "采集中":
+                    break
+            except Exception:
+                pass
+            if page.locator("#btnX").count() > 0 and not page.locator("#btnX").is_disabled():
+                break
+            page.wait_for_timeout(500)
+        else:
+            pytest.fail("Acquisition never started: buf-coll never showed 采集中")
+
         buf_frames = page.locator("#buf-frames").inner_text() if page.locator("#buf-frames").count() else "(none)"
-        print(f"[DEBUG] After start: btn='{btn_s_after}', buf-frames={buf_frames}")
+        print(f"[DEBUG] Acquisition started: buf-coll=采集中, buf-frames={buf_frames}")
 
         # Poll inference table
         data_found = False

@@ -685,8 +685,16 @@ async function connectCollector() {
   const aps = $('aps');
   if (aps) aps.innerHTML = '<span style="color:var(--mut)">正在连接…</span>';
   try {
-    // deviceId 此时是 d.type，需查 S.devices 取真实 id 再发 API
-    const realDeviceId = S.devices.find(d => (d.type || d.id) === deviceId)?.id || deviceId;
+    // deviceId 此时是 d.type，查 S.devices 取真实 id；但 pluto-repeater
+    // 的真实 id 是 file:iq_recording.bin，不在 S.devices 里，需要特殊处理
+    let realDeviceId;
+    if (deviceId.includes('pluto-repeater')) {
+        // pluto-repeater: use file:// + the IQ file path from the form
+        const iqPath = $('iqFilePath')?.value || 'iq_recording.bin';
+        realDeviceId = 'file:' + iqPath;
+    } else {
+        realDeviceId = S.devices.find(d => (d.type || d.id) === deviceId)?.id || deviceId;
+    }
     await api('POST', '/api/v1/collector/connect', { device_uri: realDeviceId });
     S.collector_connected = true;
     updateButtonStates();

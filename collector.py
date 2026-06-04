@@ -152,6 +152,22 @@ class Collector:
 
         try:
             self._device = connect_device(uri)
+            # file:// URIs (pluto-repeater mode) return None — no hardware to connect
+            if self._device is None:
+                logger.info("Connected to file-based device: %s", uri)
+                self._device_info = {
+                    "uri": uri,
+                    "connected": True,
+                    "temperature": 0,
+                }
+                return {
+                    "uri": uri,
+                    "type": "file",
+                    "name": "File-based Repeater",
+                    "connected": True,
+                    "fw_version": "N/A",
+                    "temperature": 0,
+                }
             self._device_info = {
                 "uri": uri,
                 "connected": True,
