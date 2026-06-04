@@ -592,6 +592,10 @@ class Platform:
 
         available：onnxruntime.get_available_providers() 返回的列表
         """
+        # If device is already an ONNX provider name (from schema enum), use it directly
+        if device in available:
+            return [device, "CPUExecutionProvider"]
+
         cpu_first = ["CPUExecutionProvider"]
 
         if device == "cpu":

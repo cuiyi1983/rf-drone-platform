@@ -266,6 +266,10 @@ class RFUAVTwoStageComponent(IInferenceComponent):
         Returns:
             ONNX Runtime providers list in priority order
         """
+        # If device is already an ONNX provider name (from schema enum), use it directly
+        if device in available:
+            return [device, "CPUExecutionProvider"]
+
         cpu_first = ["CPUExecutionProvider"]
 
         if device == "cpu":
