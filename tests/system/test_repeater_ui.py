@@ -472,7 +472,19 @@ def test_session_stats_returns_actual_provider(ensure_services):
         page.wait_for_timeout(2000)
 
         # Select pluto-repeater and load sim-inference
-        page.locator("#deviceSel").select_option("pluto-repeater")
+        # Dynamically find the pluto-repeater option (value varies by build)
+        for _ in range(15):
+            opt_vals = page.evaluate(
+                "Array.from(document.querySelectorAll("#deviceSel option"))"
+                ".map(o=>({v:o.value,t:o.textContent}))"
+            )
+            rpt = next((o for o in opt_vals if "pluto-repeater" in o["v"].lower()), None)
+            if rpt:
+                break
+            page.wait_for_timeout(1000)
+        else:
+            pytest.fail(f"pluto-repeater not found in device options: {opt_vals}")
+        page.locator("#deviceSel").select_option(rpt["v"])
         page.wait_for_timeout(1000)
 
         page.locator("#loadComp").click()
