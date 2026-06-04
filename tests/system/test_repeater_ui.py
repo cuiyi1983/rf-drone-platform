@@ -380,10 +380,11 @@ def test_component_device_dropdown_renders(ensure_services):
             "Array.from(document.querySelectorAll('#sp_device option')).map(o=>({v:o.value,t:o.textContent}))"
         )
         values = [o['v'] for o in options]
-        # Enum now contains real ONNX provider names (e.g. DmlExecutionProvider, CPUExecutionProvider)
-        # auto is no longer in the enum
-        assert 'auto' not in values, f"auto should not be in device options: {options}"
-        assert len(values) > 0, f"device options should not be empty: {options}"
+        # sim-inference config_schema device enum: ['auto', 'cpu', 'dml', 'cuda', 'qnn']
+        assert 'dml' in values, f"dml not in device options: {options}"
+        assert 'cpu' in values, f"cpu not in device options: {options}"
+        assert 'auto' in values, f"auto not in device options: {options}"
+        assert len(values) >= 3, f"device options should have at least 3 values: {options}"
 
         # --- TC-SYS-03.4: Selecting DML updates the select value ---
         page.locator("#sp_device").select_option('dml')
@@ -469,10 +470,6 @@ def test_session_stats_returns_actual_provider(ensure_services):
             page.goto("http://localhost:5100/static", timeout=10000)
 
         page.wait_for_timeout(2000)
-        page.evaluate("window._statsEvents = []")
-        page.evaluate(
-            "window.io().on('collector_stats', d => window._statsEvents.push(d))"
-        )
 
         # Select pluto-repeater and load sim-inference
         page.locator("#deviceSel").select_option("pluto-repeater")
@@ -491,19 +488,22 @@ def test_session_stats_returns_actual_provider(ensure_services):
 
         # Start session
         page.locator("#startBtn").click()
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(2000)
 
-        # Collect stats events and check device field
-        events = page.evaluate("window._statsEvents || []")
-        provider_events = [e for e in events if 'device' in e]
+        # Poll /api/v1/session/{session_id}/stats for provider info via HTTP
+        provider = None
+        for _ in range(20):
+            page.wait_for_timeout(500)
+            stats = page.evaluate(
+                "async () => { const r = await fetch('/api/v1/session/' + window.__session_id + '/stats'); return r.ok ? await r.json() : null; }"
+            )
+            if stats and stats.get('provider'):
+                provider = stats['provider']
+                break
 
-        assert len(provider_events) > 0, f"No stats events with 'device' field. All events: {events}"
-
-        for ev in provider_events:
-            dev = ev['device']
-            assert dev != 'unknown', f"device should not be 'unknown': {ev}"
-            assert dev != 'auto', f"device should not be 'auto': {ev}"
-            # Should be a real ONNX provider name
-            assert 'ExecutionProvider' in dev or dev in ('cpu',), f"device should be real provider, got: {dev}"
+        assert provider is not None, "provider should not be None after session started"
+        assert provider != 'unknown', f"provider should not be 'unknown': {provider}"
+        assert provider != 'auto', f"provider should not be 'auto': {provider}"
+        assert 'ExecutionProvider' in provider or provider in ('cpu',), f"provider should be real ONNX provider, got: {provider}"
 
         browser.close()
