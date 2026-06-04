@@ -739,6 +739,11 @@ function bind() {
   $('mlbtn').addEventListener('click', () => {
     const val = $('msel').value;
     if (!val) { log('请先选择组件'); return; }
+    // Auto-fill IQ path synchronously (schema params are independent of IQ file path)
+    if (val === 'rfuav-two-stage') {
+      const fp = $('iqFilePath');
+      if (fp) fp.value = 'IQ-Record/DJI_MINI3_01.npy';
+    }
     loadComponentSchema(val);
     // 显示已加载提示
     const applied = $('cfg-applied');
