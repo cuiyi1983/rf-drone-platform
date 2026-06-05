@@ -37,7 +37,6 @@ class CollectorConfig:
     gain: float = 20.0
     hop_interval_ms: int = 100
     iq_file_path: Optional[str] = None  # IQ file path (for repeater mode)
-    loop_play: bool = False              # Loop IQ file playback
 
 
 @dataclass
@@ -111,16 +110,6 @@ class Collector:
         self._start_time: Optional[float] = None
         # Device info snapshot
         self._device_info: Optional[dict] = None
-        # Persisted IQ file path for pluto-repeater device listing
-        self._iq_file_path: Optional[str] = None
-
-    # ------------------------------------------------------------------
-    # IQ File path tracking (for pluto-repeater device listing)
-    # ------------------------------------------------------------------
-    def set_iq_file_path(self, iq_file_path: str) -> None:
-        """Set the IQ file path so pluto-repeater appears in get_devices()."""
-        self._iq_file_path = iq_file_path
-        logger.info(f"Collector: IQ file path set for device listing: {iq_file_path}")
 
     # ------------------------------------------------------------------
     # Device connection management
@@ -152,21 +141,6 @@ class Collector:
 
         try:
             self._device = connect_device(uri)
-            # file:// URIs (pluto-repeater) return None — no hardware needed
-            if self._device is None:
-                self._device_info = {
-                    "uri": uri,
-                    "connected": True,
-                    "temperature": None,
-                }
-                return {
-                    "uri": uri,
-                    "type": "pluto-repeater",
-                    "name": "Pluto-Repeater (IQ File)",
-                    "connected": True,
-                    "fw_version": "v0.34",
-                    "temperature": None,
-                }
             self._device_info = {
                 "uri": uri,
                 "connected": True,
@@ -244,26 +218,22 @@ class Collector:
     # ------------------------------------------------------------------
     # Public API (matches collector-api.yaml)
     # ------------------------------------------------------------------
-    def start(self, mode: str, config: CollectorConfig, force: bool = False) -> str:
+    def start(self, mode: str, config: CollectorConfig) -> str:
         """
         Start acquisition.
 
         Args:
             mode: "pluto" or "simulator"
             config: CollectorConfig with frequencies / buffer_size / gain / etc.
-            force: if True and already running, force-reset before starting.
 
         Returns:
             session_id (UUID string).
 
         Raises:
-            RuntimeError: if already running (unless force=True)
+            RuntimeError: if already running
         """
         if self._state == CollectorState.RUNNING:
-            if force:
-                self.force_reset()
-            else:
-                raise RuntimeError("Collector already running")
+            raise RuntimeError("Collector already running")
 
         self._session_id = str(uuid.uuid4())
         self._mode = mode
@@ -281,17 +251,20 @@ class Collector:
             self._device = None
             iq_file = config.iq_file_path if hasattr(config, 'iq_file_path') else None
             if iq_file:
-                self._simulator.load(iq_file)
-                logger.info(f"Collector: IQ file loaded from config: {iq_file}")
+                try:
+                    self._simulator.load(iq_file)
+                    logger.info(f"Collector: IQ file pre-loaded from config: {iq_file}")
+                except Exception as e:
+                    logger.warning(f"IQ file pre-load failed (may already be loaded by API): {e}")
             logger.info("Collector session %s started in SIMULATOR mode", self._session_id)
         else:
             # mode == "pluto"
             # Auto-connect if device not yet connected
             if self._device is None:
                 if config.device_uri:
-                    uri = str(config.device_uri)
+                    uri = config.device_uri
                 elif len(config.frequencies) > 0:
-                    uri = str(config.frequencies[0])  # URI encoded as first freq (temporary)
+                    uri = config.frequencies[0]  # URI encoded as first freq (temporary)
                 else:
                     uri = "usb:2.6.5"
                 try:
@@ -318,25 +291,6 @@ class Collector:
         self._thread = threading.Thread(target=self._run_loop, name="collector-loop", daemon=True)
         self._thread.start()
         return self._session_id
-
-    def force_reset(self) -> None:
-        """Force reset collector state without session_id check. Used to clear stuck state."""
-        logger.info("Force resetting collector")
-        self._stop_event.set()
-        if self._thread:
-            self._thread.join(timeout=3.0)
-            self._thread = None
-        if self._device:
-            try:
-                self._device.disconnect()
-            except Exception as e:
-                logger.warning("Device disconnect error during force_reset: %s", e)
-            self._device = None
-        self._simulator = None
-        self._state = CollectorState.IDLE
-        self._session_id = None
-        self._stop_event.clear()
-        logger.info("Force reset complete")
 
     def stop(self, session_id: str) -> SessionStats:
         """
@@ -407,30 +361,19 @@ class Collector:
         logger.info("Collector: 触发扫描，来源=get_devices()")
         try:
             infos = discover_devices()
+            return [
+                {
+                    "id": d.id,
+                    "type": d.type,
+                    "name": d.name,
+                    "connected": d.connected,
+                    "fw_version": d.fw_version,
+                }
+                for d in infos
+            ]
         except Exception as e:
             logger.error("Device discovery failed: %s", e)
-            infos = []
-        devices = [
-            {
-                "id": d.id,
-                "type": d.type,
-                "name": d.name,
-                "connected": d.connected,
-                "fw_version": d.fw_version,
-            }
-            for d in infos
-        ]
-        # Always include pluto-repeater as a selectable device type.
-        # pluto-repeater is always listed regardless of hardware scan result.
-        devices.append({
-            "id": "file:iq_recording.bin",
-            "type": "pluto-repeater",
-            "name": "Pluto-Repeater (IQ File)",
-            "connected": True,
-            "fw_version": "v0.34",
-            "capabilities": {"iq_file_supported": True, "default_iq_dir": "/repo/IQ-Record"},
-        })
-        return devices
+            return []
 
     def get_capabilities(self) -> dict:
         """Return hardware capabilities (matches /collector/discover)."""
@@ -466,19 +409,11 @@ class Collector:
     # ------------------------------------------------------------------
     def _run_loop(self) -> None:
         """Background thread: reads IQ frames from device or simulator."""
-
         session_id = self._session_id
         config = self._config
         device = self._device
         simulator = self._simulator
         assert config is not None
-
-        logger.info(f"[Collector] _run_loop started (simulator={simulator is not None}, iq_file={getattr(config, 'iq_file_path', None)})")
-
-        # 检查 simulator 是否已加载数据（文件不存在时 _data 为 None）
-        if simulator is not None and not simulator.is_loaded():
-            logger.error("[Collector] simulator 未加载 IQ 数据（文件不存在或加载失败），_run_loop 退出")
-            return
 
         num_freqs = len(config.frequencies)
         last_hop = time.monotonic()
@@ -512,31 +447,12 @@ class Collector:
                 continue
             iq_data = raw[0::2] + 1j * raw[1::2]
 
-            # ---- Non-looping: stop when file is exhausted ----
-            if not config.loop_play and iq_data.size == 0:
-                logger.info("IQ file playback complete (loop_play=False)")
-                break
-
-            # ---- Determine center_freq from hardware (真实 Pluto 模式) ----
-            # 真实 Pluto：从硬件回读 rx_lo，确保与实际配置一致
-            # Repeater/Simulator：填空（传 0），Platform 端从 config 读取或保持上次值
-            if simulator is not None:
-                center_freq = 0  # 无真实硬件，填空值由 Platform 端容错处理
-            else:
-                # device.read_samples() 之后立即回读 rx_lo，确保频率已更新
-                # 这是 center_freq 的唯一可信来源（不得从 config 注入）
-                try:
-                    center_freq = device.get_frequency()
-                except Exception:
-                    center_freq = config.frequencies[self._freq_index]
-                    logger.warning("get_frequency() failed, fallback to config")
-
             # ---- Build frame dict (to match collector-api.yaml schema) ----
             frame = IQFrame(
                 frame_id=self._frame_id,
                 burst_id=self._burst_id,
                 timestamp=time.time(),
-                center_freq=center_freq,
+                center_freq=config.frequencies[self._freq_index],
                 sample_rate=config.sample_rate,
                 iq_data=iq_data.astype(np.complex64),
                 metadata={"rx_buffer_size": config.buffer_size},
@@ -548,9 +464,6 @@ class Collector:
 
             self._stats.total_frames += 1
             self._emit_frame(frame)
-            # 前 5 帧打印状态，确认循环是否继续
-            if self._stats.total_frames <= 5:
-                logger.info(f"[Collector] frame {self._stats.total_frames} done, _stop_event={self._stop_event.is_set()}")
 
             # Throttle: sleep just enough to avoid busy-spinning.
             # Real Pluto rx() is blocking; simulator needs a small sleep.
