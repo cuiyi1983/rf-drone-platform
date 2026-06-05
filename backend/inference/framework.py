@@ -201,10 +201,3 @@ class InferenceFramework:
             "provider": self._component.get_current_provider() if self._component and hasattr(self._component, 'get_current_provider') else "CPUExecutionProvider",
         }
 
-    def get_component_stats(self) -> dict:
-        """Return component-level inference stats (e.g. drone model distribution)."""
-        if self._component is None:
-            return {}
-        if hasattr(self._component, "get_inference_stats"):
-            return self._component.get_inference_stats()
-        return {}
