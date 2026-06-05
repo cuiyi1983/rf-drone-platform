@@ -20,24 +20,19 @@ from collector.collector import Collector, CollectorConfig, CollectorState, IQFr
 from collector.devices import DeviceCapabilities, discover_devices
 from collector.simulator import IQSimulator
 from collector.socketio_server import get_socketio_server
-from collector.tcp_data_server import TCPDataServer
+from collector.tcp_data_server import TCPDataServer, UDPDataServer
 
 logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------
 # App factory
 # ------------------------------------------------------------------
-# Mock devices mode (set via --mock-devices CLI flag)
-_mock_devices_mode = False
 
-
-def create_app(mock_devices: bool = False) -> Flask:
-    global _mock_devices_mode
-    _mock_devices_mode = mock_devices
+def create_app() -> Flask:
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
 
-    api = CollectorAPI(mock_devices=mock_devices)
+    api = CollectorAPI()
     api.register_routes(app)
 
     return app
@@ -77,30 +72,39 @@ class CollectorAPI:
         api.register_routes(app)
     """
 
-    def __init__(self, mock_devices: bool = False):
+    def __init__(self) -> None:
         self._collector = Collector()
         self._simulator = IQSimulator()
         self._socketio_started = False
-        self._mock_devices = mock_devices
         self._tcp_server: Optional[TCPDataServer] = None
-        if mock_devices:
-            logger.info("CollectorAPI: mock_devices 模式启用")
+        self._udp_server: Optional[UDPDataServer] = None
+        self._collector_type: str = "tcp"  # "tcp" or "udp"
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _start_socketio_once(self, host: str, port: int) -> None:
-        """Start the Socket.IO server and TCP data server once (lazy)."""
+    def _start_socketio_once(self, host: str, port: int, collector_type: str = "tcp") -> None:
+        """
+        Start the Socket.IO server and data servers (both TCP and UDP) once (lazy).
+        TCP and UDP channels are both started; collector_type determines which emitter is used.
+        """
         if not self._socketio_started:
             io_srv = get_socketio_server(host=host, port=port)
             io_srv.start()
             self._socketio_started = True
-            # Wire up frame emission (Socket.IO + TCP)
+            # Socket.IO emitter (always)
             self._collector.on_iq_frame(self._make_frame_emitter())
+            # TCP data channel
             self._collector.on_iq_frame(self._make_tcp_frame_emitter())
-            # Start TCP data server on 6103
             self._tcp_server = TCPDataServer(host="0.0.0.0", port=6103)
             self._tcp_server.start()
+            # UDP data channel
+            self._collector.on_iq_frame(self._make_udp_frame_emitter())
+            self._udp_server = UDPDataServer(host="0.0.0.0", port=6104)
+            self._udp_server.start()
+
+        # Update collector_type (for UI purposes)
+        self._collector_type = collector_type
 
     def _make_frame_emitter(self):
         """Return a callback that emits IQ frames via Socket.IO."""
@@ -138,6 +142,18 @@ class CollectorAPI:
 
         return emit_frame
 
+    def _make_udp_frame_emitter(self):
+        """Return a callback that sends IQ frames via UDP datagrams."""
+        udp_server_ref = [None]
+
+        def emit_frame(frame: IQFrame):
+            if udp_server_ref[0] is None:
+                udp_server_ref[0] = self._udp_server
+            if udp_server_ref[0]:
+                udp_server_ref[0].broadcast_frame(frame.frame_id, frame.timestamp, frame.iq_data, frame.center_freq)
+
+        return emit_frame
+
     def _start_tcp_server_once(self) -> None:
         """Ensure TCP data server is running."""
         if self._tcp_server is None:
@@ -172,14 +188,21 @@ class CollectorAPI:
             """
             body = request.get_json(force=True) or {}
             mode = body.get("mode", "pluto")
+            force = body.get("force", False)
             if mode not in ("pluto", "simulator", "repeater"):
                 return _json(400, f"Invalid mode: {mode}")
 
             raw_config = body.get("config", {})
-            # Normalise frequencies – accept ints or float strings
-            raw_freqs = raw_config.get("frequencies", [5_805_000_000])
+            # Normalise frequencies - accept both "frequency" (singular) and "frequencies" (plural)
+            # Support singular "frequency" from frontend; normalize to list
+            if raw_config.get("frequencies"):
+                raw_freqs = raw_config.get("frequencies")
+            elif raw_config.get("frequency"):
+                raw_freqs = [raw_config.get("frequency")]
+            else:
+                raw_freqs = [5_805_000_000]
             frequencies = [int(f) for f in raw_freqs]
-            # C-2: support device_uri from config for auto-connect-on-start
+
             device_uri = raw_config.get("device_uri") or None
             # Support iq_file_path for repeater mode
             iq_file_path = raw_config.get("iq_file_path") or None
@@ -188,10 +211,11 @@ class CollectorAPI:
                 device_uri=device_uri,
                 frequencies=frequencies,
                 sample_rate=int(raw_config.get("sample_rate", 60_000_000)),
-                buffer_size=int(raw_config.get("buffer_size", 524_288)),
+                buffer_size=int(raw_config.get("buffer_size", 600_000)),
                 gain=float(raw_config.get("gain", 20.0)),
                 hop_interval_ms=int(raw_config.get("hop_interval_ms", 100)),
                 iq_file_path=iq_file_path,
+                loop_play=bool(raw_config.get("loop_play", False)),
             )
 
             # If mode is "repeater", treat as simulator internally and pre-load the IQ file
@@ -201,16 +225,21 @@ class CollectorAPI:
                     return _json(400, "iq_file_path required for repeater mode")
                 try:
                     self._simulator.load(iq_file_path)
+                    self._collector.set_iq_file_path(iq_file_path)
                     logger.info(f"Collector: IQ file loaded for repeater mode: {iq_file_path}")
                 except Exception as e:
                     logger.error(f"IQ file load failed: {e}")
                     return _json(400, f"IQ file load failed: {e}")
                 actual_mode = "simulator"
 
+            # Collector data protocol: "tcp" (default) or "udp" (for high-throughput localhost)
+            collector_type = raw_config.get("collector_type", "tcp")
+
             try:
-                self._start_socketio_once("0.0.0.0", 5101)
-                self._start_tcp_server_once()
-                session_id = self._collector.start(mode=actual_mode, config=config)
+                self._start_socketio_once("0.0.0.0", 5101, collector_type=collector_type)
+                if collector_type != "udp":
+                    self._start_tcp_server_once()
+                session_id = self._collector.start(mode=actual_mode, config=config, force=force)
                 return _json(0, "采集已开始", session_id=session_id)
             except RuntimeError as e:
                 logger.error("start failed: %s", e)
@@ -258,15 +287,7 @@ class CollectorAPI:
             """
             GET /api/v1/collector/devices
             """
-            logger.info("Collector: HTTP GET /api/v1/collector/devices 被调用, mock=%s", self._mock_devices)
-            if self._mock_devices:
-                mock_devs = [
-                    {"id": "sim:pluto_2.6.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
-                    {"id": "sim:pluto_2.10.5", "type": "pluto", "name": "ADALM PLUTO (mock)", "connected": True, "fw_version": "v0.34"},
-                    {"id": "file:iq_recording.bin", "type": "pluto-repeater", "name": "Pluto-Repayer (IQ File)", "connected": True, "fw_version": "v0.34", "capabilities": {"iq_file_supported": True, "default_iq_dir": "/repo/IQ-Record"}},
-                ]
-                logger.info("Collector: 返回 mock 设备列表")
-                return {"code": 0, "message": "ok", "devices": mock_devs}, 200
+            logger.info("Collector: HTTP GET /api/v1/collector/devices 被调用")
             logger.info("Collector: 调用 self._collector.get_devices()")
             devs = self._collector.get_devices()
             logger.info("Collector: get_devices() 返回 %d 个设备: %s", len(devs), devs)
@@ -330,6 +351,18 @@ class CollectorAPI:
             return _json(0, "配置已更新")
 
         # Health check endpoint
+        @app.route("/api/v1/collector/reset", methods=["POST"])
+        def reset_collector():
+            """
+            POST /api/v1/collector/reset
+
+            Reset collector state (call after restart to clear stale state).
+            Returns: { code, message }
+            """
+            if self._collector is not None:
+                self._collector.force_reset()
+            return _json(0, "Collector reset")
+
         @app.route("/api/v1/collector/health", methods=["GET"])
         def health():
             return {"code": 0, "message": "ok"}, 200
@@ -381,9 +414,8 @@ if __name__ == "__main__":
     )
 
     parser = argparse.ArgumentParser(description="Collector Service")
-    parser.add_argument("--mock-devices", action="store_true", help="使用模拟 Pluto 设备（用于测试）")
     parser.add_argument("--port", type=int, default=5101, help="HTTP 端口（默认 5101）")
     args = parser.parse_args()
 
-    app = create_app(mock_devices=args.mock_devices)
+    app = create_app()
     app.run(host="0.0.0.0", port=args.port, debug=False, threaded=True)
