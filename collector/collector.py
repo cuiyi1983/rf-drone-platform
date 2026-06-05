@@ -309,6 +309,7 @@ class Collector:
                     raise RuntimeError(f"Pluto connection failed: {e}") from e
 
             try:
+                logger.info(f"[_apply_config] frequencies={config.frequencies}, device_uri={getattr(config, 'device_uri', None)}")
                 self._apply_config(self._device, config)
                 di = self._device.get_device_info()
                 self._device_info = {
