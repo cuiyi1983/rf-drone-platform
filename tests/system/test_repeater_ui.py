@@ -35,7 +35,7 @@ def ensure_services():
     os.system("fuser -k 5100/tcp 2>/dev/null; fuser -k 5101/tcp 2>/dev/null; fuser -k 5102/tcp 2>/dev/null")
     time.sleep(1)
     env = os.environ.copy()
-    subprocess.Popen([_python_bin, "-m", "collector.api", "--port", "5101"],
+    subprocess.Popen([_python_bin, "-m", "collector.api", "--port", "5101", "--mock-devices"],
         cwd=base, env=env, stdout=open("/tmp/collector.log","w"), stderr=subprocess.STDOUT)
     subprocess.Popen([_python_bin, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "5100"],
         cwd=base, stdout=open("/tmp/platform.log","w"), stderr=subprocess.STDOUT)

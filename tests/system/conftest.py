@@ -39,7 +39,7 @@ def ensure_services():
     if not collector_ready:
         print("\n[conftest] Starting Collector (5101)...")
         col_proc = subprocess.Popen(
-            [venv_python, "-m", "collector.api", "--port", "5101"],
+            [venv_python, "-m", "collector.api", "--port", "5101", "--mock-devices"],
             cwd=base_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
