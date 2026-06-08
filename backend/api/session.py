@@ -136,6 +136,9 @@ async def get_inference_stats(session_id: str) -> dict:
     """
     GET /api/v1/session/{session_id}/inference_stats
     获取推理统计（最近5秒窗口）：推理次数、noise次数/比例、有无人机次数/比例、机型分布
+
+    Stats are computed by Platform from _inference_history (NOT from component).
+    This ensures rfuav-two-stage and any stateless component works correctly.
     """
     if _platform_ref is None:
         raise HTTPException(status_code=500, detail="Platform not initialized")
@@ -147,9 +150,61 @@ async def get_inference_stats(session_id: str) -> dict:
     if framework is None:
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    component_stats = framework.get_component_stats()
-    return {"session_id": session_id, **component_stats}
+    history = _platform_ref._inference_history.get(session_id, [])
+    stats = _compute_stats_from_history(history)
+    return {"session_id": session_id, **stats}
 
+
+def _compute_stats_from_history(history: list) -> dict:
+    """Compute inference stats from a list of inference result dicts."""
+    inference_count = len(history)
+    drone_count = 0
+    noise_count = 0
+    model_distribution: dict = {}
+
+    for result in history:
+        # Determine if this result is a drone detection
+        detections = result.get("detections", [])
+        is_drone = bool(detections)
+        if is_drone:
+            drone_count += 1
+        else:
+            noise_count += 1
+
+        # Count per model
+        model = result.get("model", "unknown")
+        model_distribution[model] = model_distribution.get(model, 0) + 1
+
+    # Compute ratios (avoid division by zero)
+    if inference_count == 0:
+        noise_ratio = 0.0
+        drone_ratio = 0.0
+    else:
+        noise_ratio = noise_count / inference_count
+        drone_ratio = drone_count / inference_count
+
+    return {
+        "inference_count": inference_count,
+        "drone_count": drone_count,
+        "noise_count": noise_count,
+        "noise_ratio": noise_ratio,
+        "drone_ratio": drone_ratio,
+        "model_distribution": model_distribution,
+    }
+
+
+@router.get("/{session_id}/latest_result")
+async def get_session_latest_result(session_id: str) -> dict:
+    """
+    GET /api/v1/session/{session_id}/latest_result
+    返回最近一次推理结果（用于 HTTP 轮询替代 Socket.IO）
+    """
+    if _platform_ref is None:
+        raise HTTPException(status_code=500, detail="Platform not initialized")
+
+    history = _platform_ref._inference_history.get(session_id, [])
+    latest = history[-1] if history else None
+    return {"session_id": session_id, "result": latest}
 
 @router.get("/{session_id}/latest_result")
 async def get_session_latest_result(session_id: str) -> dict:

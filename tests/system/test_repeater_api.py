@@ -102,7 +102,7 @@ def test_repeater_session_lifecycle(ensure_services, stop_active_sessions):
 
     # Step 3: Start session
     r = requests.post(f"{PLATFORM_URL}/api/v1/session/start",
-        json={"component_id": "sim-inference", "config": {"iq_file_path": "IQ-Record/noise_5db_600k.bin"}}, timeout=10)
+        json={"component_id": "sim-inference", "config": {"iq_file_path": "/home/ubuntu/rf-drone-platform-test/IQ-Record/noise_5db_600k.bin"}}, timeout=10)
     assert r.status_code == 200, f"session start failed: {r.text}"
     assert r.json().get("status") == "running", f"session start error: {r.json()}"
     session_id = r.json().get("session_id")
