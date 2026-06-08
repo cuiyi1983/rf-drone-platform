@@ -106,10 +106,14 @@ function handleInferenceResult(data) {
 
   // Update debug stats
   if (data.debug) {
-    $('ds-inf-count').textContent = S.inf_count;
-    $('ds-inf-time').textContent = (data.debug.inference_time_ms || 0).toFixed(1) + ' ms';
-    if (data.debug.input_shape) $('ds-inf-in').textContent = data.debug.input_shape.join('x');
-    if (data.debug.output_shape) $('ds-inf-out').textContent = data.debug.output_shape.join('x');
+    const dsInfCount = $('ds-inf-count');
+    const dsInfTime = $('ds-inf-time');
+    const dsInfIn = $('ds-inf-in');
+    const dsInfOut = $('ds-inf-out');
+    if (dsInfCount) dsInfCount.textContent = S.inf_count;
+    if (dsInfTime) dsInfTime.textContent = (data.debug.inference_time_ms || 0).toFixed(1) + ' ms';
+    if (dsInfIn && data.debug.input_shape) dsInfIn.textContent = data.debug.input_shape.join('x');
+    if (dsInfOut && data.debug.output_shape) dsInfOut.textContent = data.debug.output_shape.join('x');
   }
 
   // Update cfg info

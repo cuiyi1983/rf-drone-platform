@@ -7,7 +7,7 @@ Verifies that after clicking Start and acquisition begins:
 
 Run:
   cd /home/ubuntu/rf-drone-platform-test
-  COLLECTOR_DEVICE_IMPL=mock python3 -m pytest tests/system/test_stats_ui_visibility.py -v --tb=short
+  python3 -m pytest tests/system/test_stats_ui_visibility.py -v --tb=short
 """
 import pytest
 import requests

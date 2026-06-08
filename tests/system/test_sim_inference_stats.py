@@ -10,7 +10,7 @@ Verifies that:
 
 Run:
   cd /home/ubuntu/rf-drone-platform-test
-  COLLECTOR_DEVICE_IMPL=mock python3 -m pytest tests/system/test_sim_inference_stats.py -v --tb=short
+  python3 -m pytest tests/system/test_sim_inference_stats.py -v --tb=short
 """
 import pytest
 import requests
