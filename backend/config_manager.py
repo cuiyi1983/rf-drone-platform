@@ -125,7 +125,11 @@ class ConfigManager:
         suggested = requirements.get(key)
 
         if suggested is None:
-            # 缺失 → 返回错误，不允许用默认值兜底
+            # component 没建议 → 尝试用 capabilities（用户输入/采集器默认值）
+            cap_default = cap.get("default")
+            if cap_default is not None:
+                # capabilities 有默认值，用它补上，不算缺失
+                return cap_default
             warnings.append(f"参数 {key} 缺失")
             return None
 

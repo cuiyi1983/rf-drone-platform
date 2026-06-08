@@ -277,8 +277,12 @@ class Platform:
         component = self._components[component_id]
         requirements = component.get("collector_requirements", {})
 
-        # 合并配置
-        merged_config, warnings = self.config_manager.merge(requirements, None)
+        # 用户传入的 config 作为 capability 来源（最低优先级兜底）
+        # merge(component_requirements, collector_capabilities):
+        #   - component_requirements: 组件建议值（最高优先级）
+        #   - collector_capabilities: 采集器能力/用户配置（被组件建议覆盖）
+        user_caps = dict(config)  # 克隆，避免修改原始请求
+        merged_config, warnings = self.config_manager.merge(requirements, user_caps)
         logger.info(f"ConfigManager 合并结果: {merged_config}, warnings={warnings}")
         # 有参数缺失则直接返回错误
         if any(w.endswith("缺失") for w in warnings):
