@@ -349,27 +349,6 @@ class CollectorAPI:
             requirements = body.get("requirements", {})
             config = body.get("config", {})
             logger.info(f"apply_component_config: source={source}, component_id={component_id}, config={config}")
-
-            state = self._collector._state
-            if state != CollectorState.RUNNING:
-                return _json(400, "Collector not running — start a session first")
-
-            device = self._collector._device
-            if device is None:
-                return _json(400, "No device connected")
-
-            cfg_prev = self._collector._config
-            if not cfg_prev:
-                return _json(400, "Collector config not initialized")
-            cfg = CollectorConfig(
-                frequencies=[int(raw_freq)] if (raw_freq := config.get("frequency")) else [cfg_prev.frequencies[0]],
-                sample_rate=int(config.get("sample_rate", cfg_prev.sample_rate)),
-                rf_bandwidth=int(config.get("rf_bandwidth", cfg_prev.rf_bandwidth)),
-                buffer_size=int(config.get("buffer_size", cfg_prev.buffer_size)),
-                gain=float(config.get("gain", cfg_prev.gain)),
-                device_uri=getattr(cfg_prev, "device_uri", None),
-            )
-            self._collector._apply_config(device, cfg)
             return _json(0, "配置已更新")
 
         # Health check endpoint
