@@ -33,6 +33,7 @@ class CollectorConfig:
     device_uri: Optional[str] = None   # e.g. "usb:2.6.5"; None = auto-discover
     frequencies: list[int] = field(default_factory=lambda: [5_805_000_000])
     sample_rate: int = 60_000_000
+    rf_bandwidth: int = 56_000_000
     buffer_size: int = 524_288
     gain: float = 20.0
     hop_interval_ms: int = 100
@@ -234,11 +235,13 @@ class Collector:
         device.set_gain(config.gain)
         device.set_buffer_size(config.buffer_size)
         device.set_sample_rate(config.sample_rate)
+        device.set_rf_bandwidth(config.rf_bandwidth)
         logger.info(
-            "Collector configured: freq=%d Hz  buffer=%d  gain=%.1f dB",
+            "Collector configured: freq=%d Hz  buffer=%d  gain=%.1f dB  rf_bw=%d Hz",
             config.frequencies[0],
             config.buffer_size,
             config.gain,
+            config.rf_bandwidth,
         )
 
     # ------------------------------------------------------------------
@@ -284,6 +287,10 @@ class Collector:
                 self._simulator.load(iq_file)
                 logger.info(f"Collector: IQ file loaded from config: {iq_file}")
             logger.info("Collector session %s started in SIMULATOR mode", self._session_id)
+            logger.info(
+                "[Collector] config: freq=%d Hz  sample_rate=%d Hz  rf_bandwidth=%d Hz  buffer=%d",
+                config.frequencies[0], config.sample_rate, config.rf_bandwidth, config.buffer_size,
+            )
         else:
             # mode == "pluto"
             # Auto-connect if device not yet connected
@@ -483,10 +490,28 @@ class Collector:
         num_freqs = len(config.frequencies)
         last_hop = time.monotonic()
         hop_interval_s = config.hop_interval_ms / 1000.0
+        last_config_log = 0.0
+        log_interval_s = 10.0  # 每 10 秒打印一次设备配置
+
+        logger.info(
+            "[Collector] config: freq=%d Hz  sample_rate=%d Hz  rf_bandwidth=%d Hz  buffer=%d",
+            config.frequencies[0], config.sample_rate, config.rf_bandwidth, config.buffer_size,
+        )
 
         while not self._stop_event.is_set():
+            now = time.monotonic()
+            if now - last_config_log >= log_interval_s:
+                actual_freq = device.get_frequency() if device and hasattr(device, "get_frequency") else config.frequencies[0]
+                actual_sample_rate = getattr(device, "_sample_rate", config.sample_rate)
+                actual_rf_bandwidth = getattr(device, "_rf_bandwidth", config.rf_bandwidth)
+                logger.info(
+                    "[Collector] current device state: freq=%d Hz  sample_rate=%d Hz  rf_bandwidth=%d Hz  buffer=%d",
+                    actual_freq, actual_sample_rate, actual_rf_bandwidth, config.buffer_size,
+                )
+                last_config_log = now
+
             # ---- Hop frequency if needed ----
-            if num_freqs > 1 and (time.monotonic() - last_hop) >= hop_interval_s:
+            if num_freqs > 1 and (now - last_hop) >= hop_interval_s:
                 self._freq_index = (self._freq_index + 1) % num_freqs
                 next_freq = config.frequencies[self._freq_index]
                 if device:

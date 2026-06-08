@@ -96,6 +96,11 @@ class IDevice(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def set_rf_bandwidth(self, bandwidth_hz: int) -> None:
+        """Set RF bandwidth in Hz."""
+        raise NotImplementedError
+
+    @abstractmethod
     def read_samples(self, num_samples: Optional[int] = None) -> bytes:
         """Read IQ samples from the device. Returns raw bytes (complex interleaved)."""
         raise NotImplementedError
@@ -187,6 +192,10 @@ class MockPlutoDevice(IDevice):
         # Pluto ignores external sample rate; always 60 MHz
         self._sample_rate = rate
         logger.debug("Mock sample_rate set (informational): %d Hz", rate)
+
+    def set_rf_bandwidth(self, bandwidth_hz: int) -> None:
+        self._rf_bandwidth = bandwidth_hz
+        logger.debug("Mock rf_bandwidth set: %d Hz", bandwidth_hz)
 
     def read_samples(self, num_samples: Optional[int] = None) -> bytes:
         if num_samples is None:
@@ -299,6 +308,10 @@ class PlutoDevice(IDevice):
         # Pluto ignores – always 60 MHz – but record for info
         self._sdr.sample_rate = int(rate)
         self._sample_rate = rate
+
+    def set_rf_bandwidth(self, bandwidth_hz: int) -> None:
+        self._sdr.rx_bandwidth = int(bandwidth_hz)
+        self._rf_bandwidth = bandwidth_hz
 
     def read_samples(self, num_samples: Optional[int] = None) -> bytes:
         import numpy as np

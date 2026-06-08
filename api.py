@@ -189,6 +189,7 @@ class CollectorAPI:
                 device_uri=device_uri,
                 frequencies=frequencies,
                 sample_rate=int(raw_config.get("sample_rate", 60_000_000)),
+                rf_bandwidth=int(raw_config.get("rf_bandwidth", 56_000_000)),
                 buffer_size=int(raw_config.get("buffer_size", 524_288)),
                 gain=float(raw_config.get("gain", 20.0)),
                 hop_interval_ms=int(raw_config.get("hop_interval_ms", 100)),

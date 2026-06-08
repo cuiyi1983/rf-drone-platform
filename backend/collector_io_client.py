@@ -57,6 +57,7 @@ class CollectorIOClient:
         collector_type: str = "tcp",
         center_freq: int = 5_805_000_000,
         sample_rate: int = 60_000_000,
+        rf_bandwidth: int = 56_000_000,
     ):
         self._host = collector_host
         self._tcp_port = tcp_port
@@ -69,6 +70,7 @@ class CollectorIOClient:
         self._local_udp_port: int = 0  # 本端 UDP 端口（注册用）
         self._center_freq = center_freq  # 频点（Hz），注入到每帧供推理组件使用
         self._sample_rate = sample_rate  # 采样率
+        self._rf_bandwidth = rf_bandwidth  # 射频带宽
 
     async def connect(self, framework, session_id: str) -> bool:
         self._framework_ref = framework
@@ -259,6 +261,7 @@ class CollectorIOClient:
                     "timestamp": timestamp,
                     "center_freq": effective_freq,
                     "sample_rate": self._sample_rate,
+                    "rf_bandwidth": self._rf_bandwidth,
                     "iq_data": iq_complex.astype(np.complex64),
                 }
                 self._framework_ref.put_frame(iq_frame)
