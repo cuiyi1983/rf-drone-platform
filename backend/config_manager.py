@@ -125,13 +125,9 @@ class ConfigManager:
         suggested = requirements.get(key)
 
         if suggested is None:
-            # 缺失，用 default
-            if cap_default is not None:
-                warnings.append(f"参数 {key} 缺失，使用默认值 {cap_default}")
-                return cap_default
-            else:
-                warnings.append(f"参数 {key} 缺失，且无默认值")
-                return None
+            # 缺失 → 返回错误，不允许用默认值兜底
+            warnings.append(f"参数 {key} 缺失")
+            return None
 
         # 越界检查
         if cap_range is not None:

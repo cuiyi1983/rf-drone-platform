@@ -280,6 +280,10 @@ class Platform:
         # 合并配置
         merged_config, warnings = self.config_manager.merge(requirements, None)
         logger.info(f"ConfigManager 合并结果: {merged_config}, warnings={warnings}")
+        # 有参数缺失则直接返回错误
+        if any(w.endswith("缺失") for w in warnings):
+            missing = [w for w in warnings if w.endswith("缺失")]
+            return {"error": "; ".join(missing), "code": 1005}
 
         # 生成 session_id
         session_id = f"sess_{uuid.uuid4().hex[:12]}"

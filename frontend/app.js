@@ -453,9 +453,20 @@ async function startSession() {
     const deviceValue = params.device;
     if (deviceValue) delete params.device;  // remove from config, send top-level
 
+    // 从 #collector-params 读取采集器参数（frequency/sample_rate/rf_bandwidth/gain）
+    const collectorCfg = {};
+    const cf = parseFloat($('cf')?.value);
+    const sr = parseFloat($('sr')?.value);
+    const bw = parseFloat($('bw')?.value);
+    const gain = parseFloat($('gain')?.value);
+    if (!isNaN(cf)) collectorCfg.frequency = cf * 1e6;
+    if (!isNaN(sr)) collectorCfg.sample_rate = sr * 1e6;
+    if (!isNaN(bw)) collectorCfg.rf_bandwidth = bw * 1e6;
+    if (!isNaN(gain)) collectorCfg.gain = gain;
+
     const data = await api('POST', '/api/v1/session/start', {
       component_id: componentId,
-      config: params,
+      config: { ...params, ...collectorCfg },
       ...(deviceValue ? { device: deviceValue } : {}),
     });
 
