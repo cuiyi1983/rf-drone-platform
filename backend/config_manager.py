@@ -89,7 +89,9 @@ class ConfigManager:
         # sample_rate 和 rf_bandwidth 是 fixed，不参与合并
         for fixed_key in ["sample_rate", "rf_bandwidth"]:
             if fixed_key in caps:
-                merged[fixed_key] = caps[fixed_key]["fixed"]
+                cap_val = caps[fixed_key]
+                # 支持 {"fixed": N} 格式或裸 int 值
+                merged[fixed_key] = cap_val["fixed"] if isinstance(cap_val, dict) else cap_val
 
         # 可配置参数：frequency, buffer_size, gain
         for key in ["frequency", "buffer_size", "gain"]:
@@ -119,14 +121,19 @@ class ConfigManager:
         - 缺失 → 用 capability default 补齐
         """
         cap = capabilities.get(key, {})
-        cap_range = cap.get("range")
-        cap_default = cap.get("default")
+        # 支持 {"type":..., "range": [...], "default": N} 格式或裸值
+        if isinstance(cap, dict):
+            cap_range = cap.get("range")
+            cap_default = cap.get("default")
+        else:
+            # 裸值：既是 default 也是具体值，无 range 检查
+            cap_range = None
+            cap_default = cap
 
         suggested = requirements.get(key)
 
         if suggested is None:
             # component 没建议 → 尝试用 capabilities（用户输入/采集器默认值）
-            cap_default = cap.get("default")
             if cap_default is not None:
                 # capabilities 有默认值，用它补上，不算缺失
                 return cap_default

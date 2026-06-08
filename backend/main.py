@@ -281,8 +281,20 @@ class Platform:
         # merge(component_requirements, collector_capabilities):
         #   - component_requirements: 组件建议值（最高优先级）
         #   - collector_capabilities: 采集器能力/用户配置（被组件建议覆盖）
-        user_caps = dict(config)  # 克隆，避免修改原始请求
-        merged_config, warnings = self.config_manager.merge(requirements, user_caps)
+        # 将 collector 默认能力与用户输入合并，用户值覆盖默认值
+        cached_caps = self.config_manager.get_collector_capabilities()
+        combined_caps = {}
+        for k, v in cached_caps.items():
+            if isinstance(v, dict):
+                combined_caps[k] = {**v}  # 克隆
+            else:
+                combined_caps[k] = v
+        for k, v in config.items():
+            if k in combined_caps and isinstance(combined_caps[k], dict):
+                combined_caps[k]["default"] = v  # 用户值替换 default
+            else:
+                combined_caps[k] = v  # 用户提供的额外参数直接加入
+        merged_config, warnings = self.config_manager.merge(requirements, combined_caps)
         logger.info(f"ConfigManager 合并结果: {merged_config}, warnings={warnings}")
         # 有参数缺失则直接返回错误
         if any(w.endswith("缺失") for w in warnings):
